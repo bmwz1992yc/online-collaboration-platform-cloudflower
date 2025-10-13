@@ -1,0 +1,51 @@
+<![CDATA[body { 
+  font-family: 'Inter', sans-serif; 
+  background-color: #f4f5f7; 
+}
+
+.completed .flex-grow label { 
+  text-decoration: line-through; 
+  color: #9ca3af; 
+}
+
+.todo-item { 
+  display: flex; 
+  align-items: center; 
+  padding: 12px; 
+  background: white; 
+  border-radius: 8px; 
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05); 
+}
+
+.todo-item input[type="checkbox"] { 
+  width: 18px; 
+  height: 18px; 
+  margin-right: 12px; 
+  flex-shrink: 0; 
+  cursor: pointer; 
+}
+
+.todo-item label { 
+  flex-grow: 1; 
+  font-size: 1.05em; 
+}
+
+.meta-info { 
+  font-size: 0.8em; 
+  color: #6b7280; 
+}
+
+.delete-btn, .delete-link-btn {
+  background-color: #ef4444; 
+  color: white; 
+  border: none; 
+  padding: 4px 10px; 
+  border-radius: 6px; 
+  font-weight: bold; 
+  cursor: pointer; 
+  transition: background-color 0.2s;
+}
+
+.delete-btn:hover, .delete-link-btn:hover { 
+  background-color: #dc2626; 
+}]]>

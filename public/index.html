@@ -1,0 +1,191 @@
+<![CDATA[<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>全局待办事项清单</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fslightbox@3.4.1/index.min.js"></script>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    body {
+      background: linear-gradient(135deg, #eef2ff, #f8f9ff, #e0e7ff);
+      min-height: 100vh;
+      font-family: 'Inter', 'Noto Sans SC', sans-serif;
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      border-radius: 1rem;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+    }
+    .completed .flex-grow label {
+      text-decoration: line-through;
+      color: #9ca3af;
+    }
+  </style>
+</head>
+<body class="p-4 md:p-8 text-gray-800">
+  <div class="container mx-auto space-y-10">
+    
+    <!-- 页头 -->
+    <header class="text-center space-y-3">
+      <h1 class="text-4xl font-bold tracking-tight bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent">
+        全局待办事项清单
+      </h1>
+      <p class="text-gray-600 text-sm">集中管理任务、物品交接与用户信息</p>
+    </header>
+
+    <!-- 添加事项 + 物品交接 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      
+      <!-- 添加事项 -->
+      <section class="card p-6 space-y-4">
+        <div class="flex items-center gap-2 mb-2">
+          <i data-lucide="plus-circle" class="w-5 h-5 text-blue-600"></i>
+          <h2 class="text-lg font-semibold text-blue-700">添加新事项</h2>
+        </div>
+        <form action="/api/add_todo" method="POST" class="space-y-3" enctype="multipart/form-data">
+          <input type="hidden" name="creatorId" value="admin" />
+          <input type="text" name="text" placeholder="输入新的待办事项..." required
+                 class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-300" />
+          <input type="file" name="image" accept="image/*"
+                 class="w-full text-sm border rounded-lg p-1" />
+          <div class="p-3 bg-gray-50 border rounded-lg">
+            <h3 class="text-sm font-semibold mb-1 text-gray-700">指派给 (可多选)</h3>
+            <div class="space-y-1 max-h-20 overflow-y-auto text-sm" id="todo-user-options">
+              <label class="flex items-center space-x-2">
+                <input type="checkbox" name="userIds" value="public"
+                       class="rounded border-gray-300 text-blue-600 focus:ring-blue-300" />
+                <span>公共 (无指定用户)</span>
+              </label>
+              <!-- 用户选项将在这里动态插入 -->
+            </div>
+          </div>
+          <button type="submit"
+                  class="w-full bg-blue-600 text-white font-medium py-2 px-4 rounded-lg">
+            添加事项
+          </button>
+        </form>
+      </section>
+
+      <!-- 物品交接 -->
+      <section class="card p-6 space-y-4">
+        <div class="flex items-center gap-2 mb-2">
+          <i data-lucide="package" class="w-5 h-5 text-purple-600"></i>
+          <h2 class="text-lg font-semibold text-purple-700">物品交接</h2>
+        </div>
+        <form id="add-item-form" class="space-y-3" enctype="multipart/form-data">
+          <input type="text" id="item-name" name="name" placeholder="物品名称..." required
+                 class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-purple-300" />
+          <div class="p-3 bg-gray-50 border rounded-lg">
+            <h3 class="text-sm font-semibold mb-1 text-gray-700">持有人 (可多选)</h3>
+            <div id="item-keeper-checkboxes" class="space-y-1 max-h-20 overflow-y-auto text-sm">
+              <label class="flex items-center space-x-2">
+                <input type="checkbox" name="itemUserIds" value="public"
+                       class="rounded border-gray-300 text-purple-600 focus:ring-purple-300" />
+                <span>公共 (无指定用户)</span>
+              </label>
+              <!-- 用户选项将在这里动态插入 -->
+            </div>
+          </div>
+          <input type="file" id="item-image" name="image" accept="image/*"
+                 class="w-full text-sm border rounded-lg p-1" />
+          <select id="item-todo-id" class="w-full p-2 border rounded-lg text-sm">
+            <option value="">选择关联待办事项 (可选)</option>
+            <!-- 待办事项选项将在这里动态插入 -->
+          </select>
+          <button type="submit"
+                  class="w-full bg-purple-600 text-white font-medium py-2 px-4 rounded-lg">
+            添加交接物品
+          </button>
+        </form>
+
+        <div class="mt-4">
+          <h3 class="text-sm font-semibold mb-2 text-gray-700">当前交接物品</h3>
+          <ul id="kept-items-list" class="space-y-1 text-sm text-gray-500">
+            <p class="text-center py-4">无任何交接物品。</p>
+          </ul>
+        </div>
+      </section>
+    </div>
+
+    <!-- 所有事项 -->
+    <section class="card p-6">
+      <div class="flex items-center gap-2 mb-4">
+        <i data-lucide="check-square" class="w-6 h-6 text-blue-600"></i>
+        <h2 class="text-2xl font-semibold text-gray-800">所有事项</h2>
+      </div>
+      <ul id="all-todos-list" class="space-y-3 text-sm">
+        <p class="text-center text-gray-500 py-10">无任何待办事项。</p>
+      </ul>
+    </section>
+
+    <!-- 用户管理 -->
+    <section class="card p-6">
+      <div class="flex items-center gap-2 mb-4">
+        <i data-lucide="users" class="w-6 h-6 text-green-600"></i>
+        <h2 class="text-2xl font-semibold text-gray-800">用户管理</h2>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div>
+          <h3 class="text-lg font-semibold mb-2">新增用户</h3>
+          <form action="/api/add_user" method="POST" class="flex space-x-2">
+            <input type="text" name="username" placeholder="新用户名..." required
+                   class="flex-grow p-2 border rounded-lg focus:ring-2 focus:ring-green-300" />
+            <button type="submit"
+                    class="w-full bg-green-500 text-white font-medium py-2 px-4 rounded-lg">
+              创建
+            </button>
+          </form>
+        </div>
+        <div>
+          <h3 class="text-lg font-semibold mb-2">现有用户 (<span id="user-count">0</span>)</h3>
+          <ul id="user-list" class="space-y-2 text-sm text-gray-600">
+            <li class="text-gray-400">暂无用户。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 最近删除 -->
+    <section class="card p-6">
+      <div class="flex items-center gap-2 mb-4">
+        <i data-lucide="trash-2" class="w-6 h-6 text-red-500"></i>
+        <h2 class="text-2xl font-semibold text-gray-800">最近删除 (20天内)</h2>
+      </div>
+      <ul id="deleted-todos-list" class="space-y-3 text-sm text-gray-500">
+        <p class="text-center py-10">无已删除事项。</p>
+      </ul>
+      <h3 class="text-lg font-semibold mt-4 mb-2 text-gray-700">已删除物品</h3>
+      <ul id="deleted-items-list" class="space-y-3 text-sm text-gray-500">
+        <p class="text-center py-4">无已删除物品。</p>
+      </ul>
+    </section>
+
+  </div>
+
+  <script src="/script.js"></script>
+
+  <!-- Transfer Item Modal -->
+  <div id="transfer-modal" class="fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center" style="display: none;">
+    <div class="bg-white rounded-lg p-6 w-full max-w-md">
+      <h2 class="text-xl font-bold mb-4">转交物品</h2>
+      <form id="transfer-item-form">
+        <input type="hidden" id="transfer-item-id" name="itemId">
+        <div class="p-3 bg-gray-50 border rounded-lg">
+          <h3 class="text-sm font-semibold mb-1 text-gray-700">转交给 (选择新保管人)</h3>
+          <div id="transfer-keeper-checkboxes" class="space-y-1 max-h-32 overflow-y-auto text-sm">
+            <!-- User checkboxes will be dynamically inserted here -->
+          </div>
+        </div>
+        <div class="flex justify-end space-x-2 mt-4">
+          <button type="button" onclick="closeTransferModal()" class="bg-gray-300 px-4 py-2 rounded-lg">取消</button>
+          <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg">确认转交</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+</html>]]>

@@ -1,0 +1,682 @@
+// ⚠️ 重要提示：此 Worker 需要绑定一个名为 R2_BUCKET 的 R2 存储桶。
+// 如果未绑定 R2 存储桶，Worker 将无法正常工作。
+
+const SHARE_LINKS_KEY = 'admin:share_links';
+const DELETED_TODOS_KEY = 'system:deleted_todos';
+const KEPT_ITEMS_KEY = 'system:kept_items'; // 新增物品保管的 R2 键
+const DELETED_ITEMS_KEY = 'system:deleted_items'; // 新增已删除物品的 R2 键
+
+// --- 辅助函数 ---
+
+const getKvKey = (userId) => `todos:${userId}`;
+
+function getDisplayName(userId) {
+  if (userId === 'admin') return 'yc';
+  return userId;
+}
+
+function formatDate(isoString) {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  // 使用 toLocaleString 格式化为北京时间
+  return d.toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+        month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false // 使用24小时制
+  }).replace(/\//g, '年').replace(',', '日').replace(' ', ' '); // 格式化输出
+}
+
+// Image compression function
+async function compressImage(file) {
+  // For simplicity, we'll just return the original file
+  // In a real implementation, you would use a library like Sharp or Canvas to compress the image
+  return file.stream();
+}
+
+// --- R2 存储函数 ---
+
+async function loadTodos(env, key) {
+  try {
+    const r2Object = await env.R2_BUCKET.get(key);
+    if (r2Object === null) return [];
+    return await r2Object.json();
+  } catch (error) {
+    console.error(`Error loading or parsing todos for key ${key}:`, error);
+    if (env.DEBUG) throw error; // Re-throw for debugging
+    return [];
+  }
+}
+
+async function saveTodos(env, key, todos) {
+  await env.R2_BUCKET.put(key, JSON.stringify(todos));
+}
+
+async function loadShareLinks(env) {
+  try {
+    const r2Object = await env.R2_BUCKET.get(SHARE_LINKS_KEY);
+    if (r2Object === null) return {};
+    return await r2Object.json();
+  } catch (error) {
+    console.error("Error loading share links:", error);
+    if (env.DEBUG) throw error; // Re-throw for debugging
+    return {};
+  }
+}
+
+async function saveShareLinks(env, links) {
+  await env.R2_BUCKET.put(SHARE_LINKS_KEY, JSON.stringify(links));
+}
+
+async function loadDeletedTodos(env) {
+  try {
+    const r2Object = await env.R2_BUCKET.get(DELETED_TODOS_KEY);
+    if (r2Object === null) return [];
+    return await r2Object.json();
+  } catch (error) {
+    console.error("Error loading deleted todos:", error);
+    if (env.DEBUG) throw error; // Re-throw for debugging
+    return [];
+  }
+}
+
+async function saveDeletedTodos(env, todos) {
+  await env.R2_BUCKET.put(DELETED_TODOS_KEY, JSON.stringify(todos));
+}
+
+async function loadKeptItems(env) {
+  try {
+    const r2Object = await env.R2_BUCKET.get(KEPT_ITEMS_KEY);
+    if (r2Object === null) return [];
+    return await r2Object.json();
+  } catch (error) {
+    console.error("Error loading kept items:", error);
+    if (env.DEBUG) throw error; // Re-throw for debugging
+    return [];
+  }
+}
+
+async function saveKeptItems(env, items) {
+  await env.R2_BUCKET.put(KEPT_ITEMS_KEY, JSON.stringify(items));
+}
+
+async function loadDeletedItems(env) {
+  try {
+    const r2Object = await env.R2_BUCKET.get(DELETED_ITEMS_KEY);
+    if (r2Object === null) return [];
+    return await r2Object.json();
+  } catch (error) {
+    console.error("Error loading deleted items:", error);
+    if (env.DEBUG) throw error;
+    return [];
+  }
+}
+
+async function saveDeletedItems(env, items) {
+  await env.R2_BUCKET.put(DELETED_ITEMS_KEY, JSON.stringify(items));
+}
+
+async function getAllUsersTodos(env) {
+  const listResponse = await env.R2_BUCKET.list({ prefix: 'todos:' });
+  const keys = listResponse.objects.map(k => k.key);
+  
+  let allTodos = [];
+  for (const key of keys) {
+    const ownerId = key.substring(6);
+    const userTodos = await loadTodos(env, key);
+    allTodos.push(...userTodos.map(todo => ({ ...todo, ownerId: ownerId })));
+  }
+  allTodos.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  return allTodos;
+}
+
+// --- API 逻辑处理器 ---
+
+async function handleAddTodo(request, env) {
+  const referer = request.headers.get('Referer');
+  let creatorId = 'admin';
+  if (referer) {
+      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
+      const shareLinks = await loadShareLinks(env);
+      if (shareLinks[refererPath]) {
+          creatorId = shareLinks[refererPath].username;
+      }
+  }
+
+  const formData = await request.formData();
+  const text = formData.get('text');
+  const imageFile = formData.get('image');
+  let ownerIds = formData.getAll('userIds');
+
+  if (!text) {
+    return new Response('Missing "text" in form data', { status: 400 });
+  }
+  
+  if (ownerIds.length === 0) {
+    ownerIds.push('public');
+  }
+
+  let imageUrl = null;
+  if (imageFile && imageFile.size > 0) {
+    const compressedImage = await compressImage(imageFile);
+    const imageId = crypto.randomUUID();
+    const extension = imageFile.name.split('.').pop();
+    const imageKey = `images/${imageId}.${extension}`;
+    await env.R2_BUCKET.put(imageKey, compressedImage, { httpMetadata: { contentType: imageFile.type } });
+    imageUrl = `/api/${imageKey}`; // Store relative path for API
+  }
+
+  const newTodo = {
+    id: crypto.randomUUID(),
+    text: text,
+    completed: false,
+    createdAt: new Date().toISOString(),
+    creatorId: creatorId,
+    imageUrl: imageUrl,
+    activityLog: [{
+      timestamp: new Date().toISOString(),
+      actorId: creatorId,
+      action: 'create',
+      details: { text: text }
+    }]
+  };
+
+  for (const ownerId of ownerIds) {
+    const kvKey = getKvKey(ownerId);
+    const todos = await loadTodos(env, kvKey);
+    todos.push(newTodo);
+    await saveTodos(env, kvKey, todos);
+  }
+
+  return new Response(JSON.stringify({ success: true, todo: newTodo }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+}
+
+async function handleUpdateTodo(request, env) {
+  const { id, completed, ownerId } = await request.json();
+  if (!id || completed === undefined || !ownerId) {
+    return new Response(JSON.stringify({ error: "Missing 'id', 'completed', or 'ownerId'" }), { status: 400 });
+  }
+
+  const referer = request.headers.get('Referer');
+  let completerId = 'admin';
+  if (referer) {
+      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
+      const shareLinks = await loadShareLinks(env);
+      if (shareLinks[refererPath]) {
+          completerId = shareLinks[refererPath].username;
+      }
+  }
+
+  const kvKey = getKvKey(ownerId);
+  const todos = await loadTodos(env, kvKey);
+  const todoIndex = todos.findIndex(t => t.id === id);
+
+  if (todoIndex !== -1) {
+    const oldStatus = todos[todoIndex].completed;
+    const newStatus = Boolean(completed);
+
+    if (!todos[todoIndex].activityLog) {
+      todos[todoIndex].activityLog = [];
+    }
+
+    if (oldStatus !== newStatus) {
+      todos[todoIndex].activityLog.push({
+        timestamp: new Date().toISOString(),
+        actorId: completerId,
+        action: 'update_status',
+        details: { from: oldStatus, to: newStatus }
+      });
+    }
+
+    todos[todoIndex].completed = newStatus;
+    if (newStatus) {
+      todos[todoIndex].completedAt = new Date().toISOString();
+      todos[todoIndex].completedBy = completerId;
+    } 
+
+    await saveTodos(env, kvKey, todos);
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  } else {
+    return new Response(JSON.stringify({ error: "Todo not found" }), { status: 404 });
+  }
+}
+
+async function handleDeleteTodo(request, env) {
+  const { id, ownerId } = await request.json();
+  if (!id || !ownerId) {
+    return new Response(JSON.stringify({ error: "Missing 'id' or 'ownerId'" }), { status: 400 });
+  }
+
+  const referer = request.headers.get('Referer');
+  let deleterId = 'admin';
+  if (referer) {
+      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
+      const shareLinks = await loadShareLinks(env);
+      if (shareLinks[refererPath]) {
+          deleterId = shareLinks[refererPath].username;
+      }
+  }
+
+  const kvKey = getKvKey(ownerId);
+  let todos = await loadTodos(env, kvKey);
+  const todoIndex = todos.findIndex(t => t.id === id);
+
+  if (todoIndex !== -1) {
+    if (!todos[todoIndex].activityLog) {
+      todos[todoIndex].activityLog = [];
+    }
+    todos[todoIndex].activityLog.push({
+      timestamp: new Date().toISOString(),
+      actorId: deleterId,
+      action: 'delete',
+      details: {}
+    });
+
+    const todoToDelete = todos[todoIndex];
+    todos.splice(todoIndex, 1);
+    await saveTodos(env, kvKey, todos);
+
+    const deletedTodo = {
+      ...todoToDelete,
+      ownerId: ownerId,
+      deletedAt: new Date().toISOString(),
+      deletedBy: deleterId
+    };
+
+    const deletedTodos = await loadDeletedTodos(env);
+    deletedTodos.push(deletedTodo);
+    await saveDeletedTodos(env, deletedTodos);
+
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  } else {
+    return new Response(JSON.stringify({ error: "Todo not found" }), { status: 404 });
+  }
+}
+
+async function handleCreateUser(request, env) {
+    const formData = await request.formData();
+    const username = formData.get('username')?.toLowerCase();
+    if (!username) {
+        return new Response('Username is required', { status: 400 });
+    }
+
+    const shareLinks = await loadShareLinks(env);
+    const newToken = crypto.randomUUID().substring(0, 8);
+    
+    shareLinks[newToken] = {
+        username: username,
+        created_at: new Date().toISOString()
+    };
+    
+    await saveShareLinks(env, shareLinks);
+    return new Response(JSON.stringify({ success: true, token: newToken, username: username }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+}
+
+async function handleDeleteUser(request, env) {
+    const { token } = await request.json();
+    if (!token) {
+        return new Response(JSON.stringify({ error: "Missing 'token'" }), { status: 400 });
+    }
+
+    const shareLinks = await loadShareLinks(env);
+    if (shareLinks[token]) {
+        delete shareLinks[token];
+        await saveShareLinks(env, shareLinks);
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+    } else {
+        return new Response(JSON.stringify({ error: "User token not found" }), { status: 404 });
+    }
+}
+
+// --- 物品保管 API 逻辑处理器 ---
+
+async function handleAddItem(request, env) {
+  const referer = request.headers.get('Referer');
+  const formData = await request.formData();
+  const name = formData.get('name');
+  const keepers = formData.getAll('keepers');
+  const imageFile = formData.get('image');
+  const todoId = formData.get('todoId');
+
+  if (!name || keepers.length === 0) {
+    return new Response('Missing "name" or "keepers" in form data', { status: 400 });
+  }
+
+  let creatorId = 'admin';
+  if (referer) {
+      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
+      const shareLinks = await loadShareLinks(env);
+      if (shareLinks[refererPath]) {
+          creatorId = shareLinks[refererPath].username;
+      }
+  }
+
+  let imageUrl = null;
+  if (imageFile && imageFile.size > 0) {
+    const compressedImage = await compressImage(imageFile);
+    const imageId = crypto.randomUUID();
+    const extension = imageFile.name.split('.').pop();
+    const imageKey = `images/${imageId}.${extension}`;
+    await env.R2_BUCKET.put(imageKey, compressedImage, { httpMetadata: { contentType: imageFile.type } });
+    imageUrl = `/api/${imageKey}`;
+  }
+
+  const newItem = {
+    id: crypto.randomUUID(),
+    name: name,
+    todoId: todoId || null,
+    imageUrl: imageUrl,
+    createdAt: new Date().toISOString(),
+    keepers: [{
+        userIds: keepers,
+        timestamp: new Date().toISOString(),
+        transferredBy: creatorId
+    }]
+  };
+
+  const keptItems = await loadKeptItems(env);
+  keptItems.push(newItem);
+  await saveKeptItems(env, keptItems);
+
+  return new Response(JSON.stringify({ success: true, item: newItem }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+}
+
+async function handleDeleteItem(request, env) {
+  const { id } = await request.json();
+  if (!id) {
+    return new Response(JSON.stringify({ error: "Missing 'id'" }), { status: 400 });
+  }
+
+  const referer = request.headers.get('Referer');
+  let deleterId = 'admin';
+  if (referer) {
+      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
+      const shareLinks = await loadShareLinks(env);
+      if (shareLinks[refererPath]) {
+          deleterId = shareLinks[refererPath].username;
+      }
+  }
+
+  let keptItems = await loadKeptItems(env);
+  const itemIndex = keptItems.findIndex(item => item.id === id);
+
+  if (itemIndex !== -1) {
+    const itemToDelete = keptItems[itemIndex];
+    keptItems.splice(itemIndex, 1);
+    await saveKeptItems(env, keptItems);
+
+    const deletedItem = {
+      ...itemToDelete,
+      deletedAt: new Date().toISOString(),
+      deletedBy: deleterId
+    };
+
+    const deletedItems = await loadDeletedItems(env);
+    deletedItems.push(deletedItem);
+    await saveDeletedItems(env, deletedItems);
+
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  } else {
+    return new Response(JSON.stringify({ error: "Item not found" }), { status: 404 });
+  }
+}
+
+async function handleTransferItem(request, env) {
+  const referer = request.headers.get('Referer');
+  const formData = await request.formData();
+  const itemId = formData.get('itemId');
+  const newKeepers = formData.getAll('newKeepers');
+
+  if (!itemId || newKeepers.length === 0) {
+    return new Response('Missing itemId or newKeepers in form data', { status: 400 });
+  }
+
+  let transferrerId = 'admin';
+  if (referer) {
+      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
+      const shareLinks = await loadShareLinks(env);
+      if (shareLinks[refererPath]) {
+          transferrerId = shareLinks[refererPath].username;
+      }
+  }
+
+  const keptItems = await loadKeptItems(env);
+  const itemIndex = keptItems.findIndex(item => item.id === itemId);
+
+  if (itemIndex === -1) {
+    return new Response('Item not found', { status: 404 });
+  }
+
+  const item = keptItems[itemIndex];
+  const isNewDataModel = item.keepers && typeof item.keepers[0] === 'object';
+
+  if (isNewDataModel) {
+      item.keepers.push({
+          userIds: newKeepers,
+          timestamp: new Date().toISOString(),
+          transferredBy: transferrerId
+      });
+  } else {
+      const oldKeepers = item.keepers;
+      item.keepers = [
+          {
+              userIds: oldKeepers,
+              timestamp: item.createdAt,
+              transferredBy: 'unknown'
+          },
+          {
+              userIds: newKeepers,
+              timestamp: new Date().toISOString(),
+              transferredBy: transferrerId
+          }
+      ];
+  }
+
+  await saveKeptItems(env, keptItems);
+
+  return new Response(JSON.stringify({ success: true }), { status: 200 });
+}
+
+async function handleReturnItem(request, env) {
+  const referer = request.headers.get('Referer');
+  const { id } = await request.json();
+
+  if (!id) {
+    return new Response(JSON.stringify({ error: "Missing 'id'" }), { status: 400 });
+  }
+
+  let returnerId = 'admin';
+  if (referer) {
+      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
+      const shareLinks = await loadShareLinks(env);
+      if (shareLinks[refererPath]) {
+          returnerId = shareLinks[refererPath].username;
+      }
+  }
+
+  const keptItems = await loadKeptItems(env);
+  const itemIndex = keptItems.findIndex(item => item.id === id);
+
+  if (itemIndex === -1) {
+    return new Response('Item not found', { status: 404 });
+  }
+
+  keptItems[itemIndex].returnedAt = new Date().toISOString();
+  keptItems[itemIndex].returnedBy = returnerId;
+
+  await saveKeptItems(env, keptItems);
+
+  return new Response(JSON.stringify({ success: true }), { status: 200 });
+}
+
+async function handleRestoreTodo(request, env) {
+  const { id } = await request.json();
+  if (!id) {
+    return new Response(JSON.stringify({ error: "Missing 'id'" }), { status: 400 });
+  }
+
+  const referer = request.headers.get('Referer');
+  let restorerId = 'admin';
+  if (referer) {
+      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
+      const shareLinks = await loadShareLinks(env);
+      if (shareLinks[refererPath]) {
+          restorerId = shareLinks[refererPath].username;
+      }
+  }
+
+  let deletedTodos = await loadDeletedTodos(env);
+  const todoIndex = deletedTodos.findIndex(t => t.id === id);
+
+  if (todoIndex !== -1) {
+    const todoToRestore = deletedTodos[todoIndex];
+    deletedTodos.splice(todoIndex, 1);
+    
+    if (!todoToRestore.activityLog) {
+      todoToRestore.activityLog = [];
+    }
+    todoToRestore.activityLog.push({
+      timestamp: new Date().toISOString(),
+      actorId: restorerId,
+      action: 'restore',
+      details: {}
+    });
+
+    const { ownerId, deletedAt, deletedBy, ...restoredTodo } = todoToRestore;
+
+    const kvKey = getKvKey(ownerId);
+    let todos = await loadTodos(env, kvKey);
+    todos.push(restoredTodo);
+
+    await saveDeletedTodos(env, deletedTodos);
+    await saveTodos(env, kvKey, todos);
+
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  } else {
+    return new Response(JSON.stringify({ error: "Deleted todo not found" }), { status: 404 });
+  }
+}
+
+async function handleRestoreItem(request, env) {
+  const { id } = await request.json();
+  if (!id) {
+    return new Response(JSON.stringify({ error: "Missing 'id'" }), { status: 400 });
+  }
+
+  let deletedItems = await loadDeletedItems(env);
+  const itemIndex = deletedItems.findIndex(item => item.id === id);
+
+  if (itemIndex !== -1) {
+    const itemToRestore = deletedItems[itemIndex];
+    deletedItems.splice(itemIndex, 1);
+
+    const { deletedAt, deletedBy, ...restoredItem } = itemToRestore;
+
+    let keptItems = await loadKeptItems(env);
+    keptItems.push(restoredItem);
+
+    await saveDeletedItems(env, deletedItems);
+    await saveKeptItems(env, keptItems);
+
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  } else {
+    return new Response(JSON.stringify({ error: "Deleted item not found" }), { status: 404 });
+  }
+}
+
+async function handleApiData(request, env) {
+  const url = new URL(request.url);
+  const shareLinks = await loadShareLinks(env);
+  const isRootView = url.pathname === '/api/data'; // Adjust for API path
+  
+  const allTodos = await getAllUsersTodos(env);
+  let deletedTodos = await loadDeletedTodos(env);
+
+  const twentyDaysAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+  const recentDeletedTodos = deletedTodos.filter(todo => new Date(todo.deletedAt) > twentyDaysAgo);
+  if (recentDeletedTodos.length < deletedTodos.length) {
+    await saveDeletedTodos(env, recentDeletedTodos);
+  }
+
+  const keptItems = await loadKeptItems(env);
+  let deletedItems = await loadDeletedItems(env);
+  const recentDeletedItems = deletedItems.filter(item => new Date(item.deletedAt) > twentyDaysAgo);
+  if (recentDeletedItems.length < deletedItems.length) {
+    await saveDeletedItems(env, recentDeletedItems);
+  }
+
+  return new Response(JSON.stringify({
+    allTodos,
+    recentDeletedTodos,
+    keptItems,
+    recentDeletedItems,
+    shareLinks,
+    isRootView
+  }), {
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+export async function onRequest(context) {
+  const { request, env, params } = context;
+  const url = new URL(request.url);
+  const path = `/${params.path.join('/')}`;
+  console.log('Request path:', path); // Add this line for debugging
+
+  // Check for R2_BUCKET binding
+  if (!env || !env.R2_BUCKET) {
+    console.error('R2_BUCKET binding is missing or env object is undefined. Please ensure your wrangler.toml or Cloudflare Worker settings include an R2 bucket binding named R2_BUCKET.');
+    return new Response('Internal Server Error: R2_BUCKET binding is missing or env object is undefined.', { status: 500 });
+  }
+
+  // Handle image requests
+  if (path.startsWith('/images/')) {
+    const imageKey = path.substring(1); // Remove leading slash
+    const r2Object = await env.R2_BUCKET.get(imageKey);
+
+    if (r2Object === null) {
+      return new Response('Not Found', { status: 404 });
+    }
+
+    const headers = new Headers();
+    r2Object.writeHttpMetadata(headers);
+    headers.set('etag', r2Object.httpEtag);
+
+    return new Response(r2Object.body, {
+      headers,
+    });
+  }
+
+  // Handle API routes
+  switch (path) {
+    case '/data':
+      return handleApiData(request, env);
+    case '/add_todo':
+      return handleAddTodo(request, env);
+    case '/update_todo':
+      return handleUpdateTodo(request, env);
+    case '/delete_todo':
+      return handleDeleteTodo(request, env);
+    case '/add_user':
+      return handleCreateUser(request, env);
+    case '/delete_user':
+      return handleDeleteUser(request, env);
+    case '/add_item':
+      return handleAddItem(request, env);
+    case '/delete_item':
+      return handleDeleteItem(request, env);
+    case '/transfer_item':
+      return handleTransferItem(request, env);
+    case '/return_item':
+      return handleReturnItem(request, env);
+    case '/restore_todo':
+      return handleRestoreTodo(request, env);
+    case '/restore_item':
+      return handleRestoreItem(request, env);
+    default:
+      return new Response('API Not Found', { status: 404 });
+  }
+}
