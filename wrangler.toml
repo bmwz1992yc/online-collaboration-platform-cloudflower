@@ -5,7 +5,3 @@ pages_build_output_dir = "./public"
 [[r2_buckets]]
 binding = "R2_BUCKET"
 bucket_name = "online-collaboration-platform"
-
-[observability]
-[observability.logs]
-enabled = true
