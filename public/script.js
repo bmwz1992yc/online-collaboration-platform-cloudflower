@@ -73,6 +73,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     deletedItemsList.innerHTML = renderDeletedItems(recentDeletedItems);
   }
 
+  // Render Deleted Progress List
+  const deletedProgressList = document.getElementById('deleted-progress-list');
+  if (deletedProgressList) {
+    deletedProgressList.innerHTML = renderDeletedProgress(initialData.recentDeletedProgress || []);
+  }
+
   // Event Listeners for Forms
   const addItemForm = document.getElementById('add-item-form');
   if (addItemForm) {
@@ -291,14 +297,18 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
             const createdAt = formatDate(item.createdAt);
             const returnInfo = item.returnedAt ? `<div class="meta-info">由 <strong>${getDisplayName(item.returnedBy)}</strong> 在 ${formatDate(item.returnedAt)} 归还</div>` : '';
             itemHtml = `
-            <div class="flex-grow">
-              <label class="font-semibold text-gray-700 ${item.returnedAt ? 'line-through' : ''}">${item.name}</label>
-              <div class="meta-info">由 <strong>${creator}</strong> 在 ${createdAt} 创建</div>
-              <div class="meta-info">当前保管人: <strong>${keepersDisplay}</strong> (自 ${formatDate(currentKeeperInfo.timestamp)})</div>
-              ${transferHistoryHtml}
-              ${returnInfo}
+            <div class="flex-grow flex items-center">
+              <div>
+                <label class="font-semibold text-gray-700 ${item.returnedAt ? 'line-through' : ''}">[物品] ${item.name}</label>
+                <div class="meta-info">由 <strong>${creator}</strong> 在 ${createdAt} 创建</div>
+                <div class="meta-info">当前保管人: <strong>${keepersDisplay}</strong> (自 ${formatDate(currentKeeperInfo.timestamp)})</div>
+                ${transferHistoryHtml}
+                ${returnInfo}
+              </div>
+              ${itemImageUrlHtml}
             </div>
             <div class="flex flex-col space-y-1 ml-2">
+                <button class="bg-yellow-500 text-white px-2 py-1 text-xs rounded" onclick="editItem('${item.id}', \`${item.name}\`)">修改</button>
                 <button class="bg-blue-500 text-white px-2 py-1 text-xs rounded" onclick="showTransferModal('${item.id}')">转交</button>
                 <button class="bg-green-500 text-white px-2 py-1 text-xs rounded" onclick="returnItem('${item.id}')" ${item.returnedAt ? 'disabled' : ''}>归还</button>
                 <button class="delete-btn" style="padding: 2px 6px; font-size: 12px;" onclick="deleteItem('${item.id}')">删除</button>
@@ -320,11 +330,9 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
             `;
         }
 
-        const itemImageUrlHtml = item.imageUrl ? `<a data-fslightbox href="${item.imageUrl}"><img src="${item.imageUrl}" alt="Item Image" class="w-12 h-12 object-cover rounded-md mr-3"></a>` : '';
         return `
           <div data-id="${item.id}" class="flex items-start" style="padding-left: 60px; padding-top: 10px;">
             <i data-lucide="package" class="w-4 h-4 text-purple-600 mr-2 mt-1"></i>
-            ${itemImageUrlHtml}
             ${itemHtml}
           </div>
         `;
@@ -333,19 +341,38 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
     return `
     <li data-id="${todo.id}" data-owner="${todo.ownerId}" class="p-4 bg-white rounded-lg shadow-sm ${todo.completed ? 'completed' : ''}">
       <div class="flex items-center">
+        <button onclick="toggleTodoDetails('${todo.id}')" class="mr-4"><i data-lucide="chevron-down"></i></button>
         <input type="checkbox" id="todo-${todo.id}" ${todo.completed ? 'checked' : ''} onchange="toggleTodo('${todo.id}', this.checked, '${todo.ownerId}')" class="mr-4 w-6 h-6 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500">
         ${imageUrlHtml}
         <div class="flex-grow">
-          <label for="todo-${todo.id}" class="text-2xl font-medium text-gray-800">${todo.text}</label>
+          <label class="text-2xl font-medium text-gray-800">${todo.text}</label>
           <div class="meta-info text-sm text-gray-500">由 <strong>${creatorDisplayName}</strong> 在 ${formatDate(todo.createdAt)} 创建${ownerInfo}${completionInfo}</div>
         </div>
         <div class="flex items-center space-x-2 ml-auto">
+          <button class="add-progress-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg text-sm" onclick="showAddProgressForm('${todo.id}')">
+            新增进度
+          </button>
+          <button class="edit-btn bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg text-sm" onclick="editTodo('${todo.id}', '${todo.ownerId}', \`${todo.text}\`)">
+            修改
+          </button>
           <button class="delete-btn bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg text-sm" onclick="deleteTodo('${todo.id}', '${todo.ownerId}')">
             删除
           </button>
         </div>
       </div>
-      ${associatedItemsHtml ? `<div class="w-full mt-2">${associatedItemsHtml}</div>` : ''}
+      <div id="todo-details-${todo.id}" class="hidden">
+        <div id="progress-form-${todo.id}" class="hidden mt-4">
+          <form onsubmit="addProgress(event, '${todo.id}')">
+            <textarea name="progress_text" placeholder="添加新的进度..." required class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-300"></textarea>
+            <input type="file" name="progress_image" accept="image/*" class="w-full text-sm border rounded-lg p-1 mt-2" multiple>
+            <button type="submit" class="w-full bg-blue-600 text-white font-medium py-2 px-4 rounded-lg mt-2">提交</button>
+          </form>
+        </div>
+        <div id="progress-container-${todo.id}" class="mt-4">
+          ${renderProgress(todo.progress || [])}
+        </div>
+        ${associatedItemsHtml ? `<div class="w-full mt-2">${associatedItemsHtml}</div>` : ''}
+      </div>
       ${activityLogHtml}
     </li>
   `}).join('');
@@ -427,6 +454,7 @@ function renderKeptItems(keptItems, shareLinks) {
               <div class="text-xs text-red-500">注意: 此物品为旧数据格式。请转交一次以更新。</div>
             </div>
             <div class="flex flex-col space-y-1 ml-2">
+                <button class="bg-yellow-500 text-white px-2 py-1 text-xs rounded" onclick="editItem('${item.id}', \`${item.name}\`)">修改</button>
                 <button class="bg-blue-500 text-white px-2 py-1 text-xs rounded" onclick="showTransferModal('${item.id}')">转交</button>
                 <button class="delete-btn" style="padding: 2px 6px; font-size: 12px;" onclick="deleteItem('${item.id}')">删除</button>
             </div>
@@ -482,6 +510,90 @@ function renderUserList(shareLinks) {
 }
 
 // API functions
+
+async function editTodo(id, ownerId, currentText) {
+  const todoElement = document.querySelector(`li[data-id='${id}'] .flex-grow`);
+  const label = todoElement.querySelector('label');
+  label.style.display = 'none';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = currentText;
+  input.className = 'text-2xl font-medium text-gray-800 w-full';
+
+  const saveChanges = async () => {
+    const newText = input.value;
+    if (newText && newText !== currentText) {
+      try {
+        const response = await fetch('/api/update_todo_text', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, ownerId, text: newText }),
+        });
+        if (!response.ok) throw new Error('更新待办事项失败');
+        window.location.reload();
+      } catch (error) {
+        console.error("Update todo text failed:", error);
+        alert('更新待办事项失败，请重试。');
+      }
+    } else {
+      label.style.display = 'block';
+      input.remove();
+    }
+  };
+
+  input.addEventListener('blur', saveChanges);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      saveChanges();
+    }
+  });
+
+  todoElement.insertBefore(input, label.nextSibling);
+  input.focus();
+}
+
+async function editItem(id, currentName) {
+  const itemElement = document.querySelector(`div[data-id='${id}'] .flex-grow`);
+  const label = itemElement.querySelector('label');
+  label.style.display = 'none';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = currentName;
+  input.className = 'font-semibold text-gray-700 w-full';
+
+  const saveChanges = async () => {
+    const newName = input.value;
+    if (newName && newName !== currentName) {
+      try {
+        const response = await fetch('/api/update_item_name', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, name: newName }),
+        });
+        if (!response.ok) throw new Error('更新物品名称失败');
+        window.location.reload();
+      } catch (error) {
+        console.error("Update item name failed:", error);
+        alert('更新物品名称失败，请重试。');
+      }
+    } else {
+      label.style.display = 'block';
+      input.remove();
+    }
+  };
+
+  input.addEventListener('blur', saveChanges);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      saveChanges();
+    }
+  });
+
+  itemElement.insertBefore(input, label.nextSibling);
+  input.focus();
+}
 
 async function toggleTodo(id, completed, ownerId) {
   try {
@@ -618,4 +730,161 @@ function showTransferModal(itemId) {
 function closeTransferModal() {
     const modal = document.getElementById('transfer-modal');
     modal.style.display = 'none';
+}
+
+function toggleKeptItems() {
+  const list = document.getElementById('kept-items-list');
+  list.classList.toggle('hidden');
+}
+
+function toggleTodoDetails(todoId) {
+  const details = document.getElementById(`todo-details-${todoId}`);
+  details.classList.toggle('hidden');
+}
+
+function showAddProgressForm(todoId) {
+  const form = document.getElementById(`progress-form-${todoId}`);
+  form.classList.toggle('hidden');
+}
+
+function renderProgress(progress) {
+  return progress.map(p => {
+    const imageUrlsHtml = p.imageUrls ? p.imageUrls.map(url => `<a data-fslightbox href="${url}"><img src="${url}" alt="Progress Image" class="w-12 h-12 object-cover rounded-md ml-3"></a>`).join('') : '';
+    return `
+      <div data-id="${p.id}" class="flex items-start" style="padding-left: 60px; padding-top: 10px;">
+        <i data-lucide="git-commit-horizontal" class="w-4 h-4 text-green-600 mr-2 mt-1"></i>
+        <div class="flex-grow flex items-center">
+          <div>
+            <label class="font-semibold text-gray-700">[进度] ${p.text}</label>
+            <div class="meta-info">由 <strong>${getDisplayName(p.creatorId)}</strong> 在 ${formatDate(p.createdAt)} 添加</div>
+          </div>
+          ${imageUrlsHtml}
+        </div>
+        <div class="flex flex-col space-y-1 ml-2">
+          <button class="bg-yellow-500 text-white px-2 py-1 text-xs rounded" onclick="editProgress('${p.id}', \`${p.text}\`)">修改</button>
+          <button class="delete-btn" style="padding: 2px 6px; font-size: 12px;" onclick="deleteProgress('${p.id}')">删除</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function addProgress(event, todoId) {
+  event.preventDefault();
+  const form = event.target;
+  const text = form.querySelector('textarea[name="progress_text"]').value;
+  const imageFiles = form.querySelector('input[name="progress_image"]').files;
+
+  const formData = new FormData();
+  formData.append('todoId', todoId);
+  formData.append('text', text);
+  for (const file of imageFiles) {
+    formData.append('images', file);
+  }
+
+  try {
+    const response = await fetch('/api/add_progress', {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) throw new Error('添加进度失败');
+    window.location.reload();
+  } catch (error) {
+    console.error("Add progress failed:", error);
+    alert('添加进度失败，请重试。');
+  }
+}
+
+async function editProgress(id, currentText) {
+  const progressElement = document.querySelector(`div[data-id='${id}'] .flex-grow`);
+  const label = progressElement.querySelector('label');
+  label.style.display = 'none';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = currentText;
+  input.className = 'font-semibold text-gray-700 w-full';
+
+  const saveChanges = async () => {
+    const newText = input.value;
+    if (newText && newText !== currentText) {
+      try {
+        const response = await fetch('/api/update_progress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, text: newText }),
+        });
+        if (!response.ok) throw new Error('更新进度失败');
+        window.location.reload();
+      } catch (error) {
+        console.error("Update progress failed:", error);
+        alert('更新进度失败，请重试。');
+      }
+    } else {
+      label.style.display = 'block';
+      input.remove();
+    }
+  };
+
+  input.addEventListener('blur', saveChanges);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      saveChanges();
+    }
+  });
+
+  progressElement.insertBefore(input, label.nextSibling);
+  input.focus();
+}
+
+async function deleteProgress(id) {
+  if (!confirm('确定要删除此进度吗？')) return;
+  try {
+    const response = await fetch('/api/delete_progress', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    if (!response.ok) throw new Error('删除进度失败');
+    window.location.reload();
+  } catch (error) {
+    console.error("Delete progress failed:", error);
+    alert('删除进度失败，请重试。');
+  }
+}
+
+function renderDeletedProgress(deletedProgress) {
+  if (deletedProgress.length === 0) {
+    return '<p class="text-center py-4">无已删除进度。</p>';
+  }
+  return deletedProgress.sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt)).map(p => {
+    return `
+      <li class="todo-item opacity-60 flex justify-between items-center">
+        <div>
+          <label class="line-through">${p.text}</label>
+          <div class="meta-info">由 <strong>${getDisplayName(p.creatorId)}</strong> 在 ${formatDate(p.createdAt)} 添加</div>
+          <div class="meta-info">由 <strong>${getDisplayName(p.deletedBy)}</strong> 在 ${formatDate(p.deletedAt)} 删除</div>
+        </div>
+        <button class="bg-green-500 hover:bg-green-600 text-white font-semibold py-1 px-3 rounded-lg text-sm" onclick="restoreProgress('${p.id}')">
+          还原
+        </button>
+      </li>
+    `;
+  }).join('');
+}
+
+async function restoreProgress(id) {
+  if (!confirm('确定要还原此进度吗？')) return;
+  try {
+    const response = await fetch('/api/restore_progress', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    if (!response.ok) throw new Error('还原进度失败');
+    window.location.reload();
+  } catch (error) {
+    console.error("Restore progress failed:", error);
+    alert('还原进度失败，请重试。');
+  }
 }
