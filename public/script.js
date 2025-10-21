@@ -196,6 +196,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
   }
+
+  // Finalize UI
+  lucide.createIcons();
+  refreshFsLightbox();
 });
 
 // Helper functions (moved from backend)
