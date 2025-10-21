@@ -5,6 +5,7 @@ const SHARE_LINKS_KEY = 'admin:share_links';
 const DELETED_TODOS_KEY = 'system:deleted_todos';
 const KEPT_ITEMS_KEY = 'system:kept_items'; // 新增物品保管的 R2 键
 const DELETED_ITEMS_KEY = 'system:deleted_items'; // 新增已删除物品的 R2 键
+const DELETED_PROGRESS_KEY = 'system:deleted_progress'; // 新增已删除进度的 R2 键
 
 // --- 辅助函数 ---
 
@@ -48,6 +49,257 @@ async function loadTodos(env, key) {
     console.error(`Error loading or parsing todos for key ${key}:`, error);
     if (env.DEBUG) throw error; // Re-throw for debugging
     return [];
+  }
+}
+
+async function handleUpdateProgress(request, env) {
+  const { id, text } = await request.json();
+  if (!id || !text) {
+    return new Response(JSON.stringify({ error: "Missing 'id' or 'text'" }), { status: 400 });
+  }
+
+  const allTodos = await getAllUsersTodos(env);
+  let progressFound = false;
+  for (const todo of allTodos) {
+    if (todo.progress && todo.progress.some(p => p.id === id)) {
+      const kvKey = getKvKey(todo.ownerId);
+      const todos = await loadTodos(env, kvKey);
+      const todoIndex = todos.findIndex(t => t.id === todo.id);
+      if (todoIndex !== -1) {
+        const progressIndex = todos[todoIndex].progress.findIndex(p => p.id === id);
+        if (progressIndex !== -1) {
+          todos[todoIndex].progress[progressIndex].text = text;
+          await saveTodos(env, kvKey, todos);
+          progressFound = true;
+        }
+      }
+    }
+  }
+
+  if (progressFound) {
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  } else {
+    return new Response(JSON.stringify({ error: "Progress not found" }), { status: 404 });
+  }
+}
+
+async function handleDeleteProgress(request, env) {
+  const { id } = await request.json();
+  if (!id) {
+    return new Response(JSON.stringify({ error: "Missing 'id'" }), { status: 400 });
+  }
+
+  const referer = request.headers.get('Referer');
+  let deleterId = 'admin';
+  if (referer) {
+      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
+      const shareLinks = await loadShareLinks(env);
+      if (shareLinks[refererPath]) {
+          deleterId = shareLinks[refererPath].username;
+      }
+  }
+
+  const allTodos = await getAllUsersTodos(env);
+  let progressFound = false;
+  for (const todo of allTodos) {
+    if (todo.progress && todo.progress.some(p => p.id === id)) {
+      const kvKey = getKvKey(todo.ownerId);
+      const todos = await loadTodos(env, kvKey);
+      const todoIndex = todos.findIndex(t => t.id === todo.id);
+      if (todoIndex !== -1) {
+        const progressIndex = todos[todoIndex].progress.findIndex(p => p.id === id);
+        if (progressIndex !== -1) {
+          const progressToDelete = todos[todoIndex].progress[progressIndex];
+          todos[todoIndex].progress.splice(progressIndex, 1);
+          await saveTodos(env, kvKey, todos);
+
+          const deletedProgress = {
+            ...progressToDelete,
+            todoId: todo.id,
+            deletedAt: new Date().toISOString(),
+            deletedBy: deleterId
+          };
+
+          const deletedProgressList = await loadDeletedProgress(env);
+          deletedProgressList.push(deletedProgress);
+          await saveDeletedProgress(env, deletedProgressList);
+          progressFound = true;
+        }
+      }
+    }
+  }
+
+  if (progressFound) {
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  } else {
+    return new Response(JSON.stringify({ error: "Progress not found" }), { status: 404 });
+  }
+}
+
+async function handleRestoreProgress(request, env) {
+  const { id } = await request.json();
+  if (!id) {
+    return new Response(JSON.stringify({ error: "Missing 'id'" }), { status: 400 });
+  }
+
+  let deletedProgressList = await loadDeletedProgress(env);
+  const progressIndex = deletedProgressList.findIndex(p => p.id === id);
+
+  if (progressIndex !== -1) {
+    const progressToRestore = deletedProgressList[progressIndex];
+    deletedProgressList.splice(progressIndex, 1);
+
+    const { todoId, deletedAt, deletedBy, ...restoredProgress } = progressToRestore;
+
+    const allTodos = await getAllUsersTodos(env);
+    let todoFound = false;
+    for (const todo of allTodos) {
+      if (todo.id === todoId) {
+        const kvKey = getKvKey(todo.ownerId);
+        const todos = await loadTodos(env, kvKey);
+        const todoIndex = todos.findIndex(t => t.id === todoId);
+        if (todoIndex !== -1) {
+          if (!todos[todoIndex].progress) {
+            todos[todoIndex].progress = [];
+          }
+          todos[todoIndex].progress.push(restoredProgress);
+          await saveTodos(env, kvKey, todos);
+          todoFound = true;
+        }
+      }
+    }
+
+    if (todoFound) {
+      await saveDeletedProgress(env, deletedProgressList);
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    } else {
+      return new Response(JSON.stringify({ error: "Todo not found for progress item" }), { status: 404 });
+    }
+  } else {
+    return new Response(JSON.stringify({ error: "Deleted progress not found" }), { status: 404 });
+  }
+}
+
+async function handleUpdateItemName(request, env) {
+  const { id, name } = await request.json();
+  if (!id || !name) {
+    return new Response(JSON.stringify({ error: "Missing 'id' or 'name'" }), { status: 400 });
+  }
+
+  const keptItems = await loadKeptItems(env);
+  const itemIndex = keptItems.findIndex(item => item.id === id);
+
+  if (itemIndex !== -1) {
+    keptItems[itemIndex].name = name;
+    await saveKeptItems(env, keptItems);
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  } else {
+    return new Response(JSON.stringify({ error: "Item not found" }), { status: 404 });
+  }
+}
+
+async function handleAddProgress(request, env) {
+  const referer = request.headers.get('Referer');
+  let creatorId = 'admin';
+  if (referer) {
+      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
+      const shareLinks = await loadShareLinks(env);
+      if (shareLinks[refererPath]) {
+          creatorId = shareLinks[refererPath].username;
+      }
+  }
+
+  const formData = await request.formData();
+  const todoId = formData.get('todoId');
+  const text = formData.get('text');
+  const imageFile = formData.get('image');
+
+  if (!todoId || !text) {
+    return new Response('Missing "todoId" or "text" in form data', { status: 400 });
+  }
+
+  let imageUrl = null;
+  if (imageFile && imageFile.size > 0) {
+    const compressedImage = await compressImage(imageFile);
+    const imageId = crypto.randomUUID();
+    const extension = imageFile.name.split('.').pop();
+    const imageKey = `images/${imageId}.${extension}`;
+    await env.R2_BUCKET.put(imageKey, compressedImage, { httpMetadata: { contentType: imageFile.type } });
+    imageUrl = `/api/${imageKey}`;
+  }
+
+  const newProgress = {
+    id: crypto.randomUUID(),
+    text: text,
+    createdAt: new Date().toISOString(),
+    creatorId: creatorId,
+    imageUrl: imageUrl
+  };
+
+  const allTodos = await getAllUsersTodos(env);
+  let todoFound = false;
+  for (const todo of allTodos) {
+    if (todo.id === todoId) {
+      const kvKey = getKvKey(todo.ownerId);
+      const todos = await loadTodos(env, kvKey);
+      const todoIndex = todos.findIndex(t => t.id === todoId);
+      if (todoIndex !== -1) {
+        if (!todos[todoIndex].progress) {
+          todos[todoIndex].progress = [];
+        }
+        todos[todoIndex].progress.push(newProgress);
+        await saveTodos(env, kvKey, todos);
+        todoFound = true;
+      }
+    }
+  }
+
+  if (todoFound) {
+    return new Response(JSON.stringify({ success: true, progress: newProgress }), { status: 200, headers: { 'Content-Type': 'application/json;charset=UTF-8' } });
+  } else {
+    return new Response(JSON.stringify({ error: "Todo not found" }), { status: 404 });
+  }
+}
+
+async function handleUpdateTodoText(request, env) {
+  const { id, ownerId, text } = await request.json();
+  if (!id || !ownerId || !text) {
+    return new Response(JSON.stringify({ error: "Missing 'id', 'ownerId', or 'text'" }), { status: 400 });
+  }
+
+  const referer = request.headers.get('Referer');
+  let editorId = 'admin';
+  if (referer) {
+      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
+      const shareLinks = await loadShareLinks(env);
+      if (shareLinks[refererPath]) {
+          editorId = shareLinks[refererPath].username;
+      }
+  }
+
+  const kvKey = getKvKey(ownerId);
+  const todos = await loadTodos(env, kvKey);
+  const todoIndex = todos.findIndex(t => t.id === id);
+
+  if (todoIndex !== -1) {
+    const oldText = todos[todoIndex].text;
+    todos[todoIndex].text = text;
+
+    if (!todos[todoIndex].activityLog) {
+      todos[todoIndex].activityLog = [];
+    }
+    todos[todoIndex].activityLog.push({
+      timestamp: new Date().toISOString(),
+      actorId: editorId,
+      action: 'update_text',
+      details: { from: oldText, to: text }
+    });
+
+
+    await saveTodos(env, kvKey, todos);
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  } else {
+    return new Response(JSON.stringify({ error: "Todo not found" }), { status: 404 });
   }
 }
 
@@ -117,6 +369,22 @@ async function loadDeletedItems(env) {
 
 async function saveDeletedItems(env, items) {
   await env.R2_BUCKET.put(DELETED_ITEMS_KEY, JSON.stringify(items));
+}
+
+async function loadDeletedProgress(env) {
+  try {
+    const r2Object = await env.R2_BUCKET.get(DELETED_PROGRESS_KEY);
+    if (r2Object === null) return [];
+    return await r2Object.json();
+  } catch (error) {
+    console.error("Error loading deleted progress:", error);
+    if (env.DEBUG) throw error;
+    return [];
+  }
+}
+
+async function saveDeletedProgress(env, progress) {
+  await env.R2_BUCKET.put(DELETED_PROGRESS_KEY, JSON.stringify(progress));
 }
 
 async function getAllUsersTodos(env) {
@@ -191,7 +459,7 @@ async function handleAddTodo(request, env) {
     await saveTodos(env, kvKey, todos);
   }
 
-  return new Response(JSON.stringify({ success: true, todo: newTodo }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify({ success: true, todo: newTodo }), { status: 200, headers: { 'Content-Type': 'application/json;charset=UTF-8' } });
 }
 
 async function handleUpdateTodo(request, env) {
@@ -312,7 +580,7 @@ async function handleCreateUser(request, env) {
     };
     
     await saveShareLinks(env, shareLinks);
-    return new Response(JSON.stringify({ success: true, token: newToken, username: username }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ success: true, token: newToken, username: username }), { status: 200, headers: { 'Content-Type': 'application/json;charset=UTF-8' } });
 }
 
 async function handleDeleteUser(request, env) {
@@ -381,7 +649,7 @@ async function handleAddItem(request, env) {
   keptItems.push(newItem);
   await saveKeptItems(env, keptItems);
 
-  return new Response(JSON.stringify({ success: true, item: newItem }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify({ success: true, item: newItem }), { status: 200, headers: { 'Content-Type': 'application/json;charset=UTF-8' } });
 }
 
 async function handleDeleteItem(request, env) {
@@ -608,15 +876,22 @@ async function handleApiData(request, env) {
     await saveDeletedItems(env, recentDeletedItems);
   }
 
+  let deletedProgress = await loadDeletedProgress(env);
+  const recentDeletedProgress = deletedProgress.filter(p => new Date(p.deletedAt) > twentyDaysAgo);
+  if (recentDeletedProgress.length < deletedProgress.length) {
+    await saveDeletedProgress(env, recentDeletedProgress);
+  }
+
   return new Response(JSON.stringify({
     allTodos,
     recentDeletedTodos,
     keptItems,
     recentDeletedItems,
+    recentDeletedProgress,
     shareLinks,
     isRootView
   }), {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json;charset=UTF-8' },
   });
 }
 
@@ -658,6 +933,8 @@ export async function onRequest(context) {
       return handleAddTodo(request, env);
     case '/update_todo':
       return handleUpdateTodo(request, env);
+    case '/update_todo_text':
+      return handleUpdateTodoText(request, env);
     case '/delete_todo':
       return handleDeleteTodo(request, env);
     case '/add_user':
@@ -668,6 +945,8 @@ export async function onRequest(context) {
       return handleAddItem(request, env);
     case '/delete_item':
       return handleDeleteItem(request, env);
+    case '/update_item_name':
+      return handleUpdateItemName(request, env);
     case '/transfer_item':
       return handleTransferItem(request, env);
     case '/return_item':
@@ -676,6 +955,14 @@ export async function onRequest(context) {
       return handleRestoreTodo(request, env);
     case '/restore_item':
       return handleRestoreItem(request, env);
+    case '/add_progress':
+      return handleAddProgress(request, env);
+    case '/update_progress':
+      return handleUpdateProgress(request, env);
+    case '/delete_progress':
+      return handleDeleteProgress(request, env);
+    case '/restore_progress':
+      return handleRestoreProgress(request, env);
     default:
       return new Response('API Not Found', { status: 404 });
   }
