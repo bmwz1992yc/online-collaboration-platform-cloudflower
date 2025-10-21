@@ -1,0 +1,28 @@
+
+ ⛅️ wrangler 4.43.0
+───────────────────
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mProcessing wrangler.toml configuration:[0m
+
+    - Because you've defined a [site] configuration, we're defaulting to "workers-site" for the deprecated `site.entry-point`field.
+      Add the top level `main` field to your configuration file:
+      ```
+      main = "workers-site/index.js"
+      ```
+
+
+✨ Compiled Worker successfully
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mProcessing wrangler.toml configuration:[0m
+
+    - Because you've defined a [site] configuration, we're defaulting to "workers-site" for the deprecated `site.entry-point`field.
+      Add the top level `main` field to your configuration file:
+      ```
+      main = "workers-site/index.js"
+      ```
+
+
+Your Worker has access to the following bindings:
+Binding                                            Resource       Mode
+env.R2_BUCKET (online-collaboration-platform)      R2 Bucket      local
+
+⎔ Starting local server...
+[wrangler:info] Ready on http://localhost:8789

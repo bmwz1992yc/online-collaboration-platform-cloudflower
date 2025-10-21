@@ -8,6 +8,15 @@ const DELETED_ITEMS_KEY = 'system:deleted_items'; // 新增已删除物品的 R2
 
 // --- 辅助函数 ---
 
+// Helper for password hashing
+async function hashPassword(password) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  // convert ArrayBuffer to hex string
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 const getKvKey = (userId) => `todos:${userId}`;
 
 function getDisplayName(userId) {
@@ -181,7 +190,8 @@ async function handleAddTodo(request, env) {
       actorId: creatorId,
       action: 'create',
       details: { text: text }
-    }]
+    }],
+    progressUpdates: []
   };
 
   for (const ownerId of ownerIds) {
@@ -305,9 +315,12 @@ async function handleCreateUser(request, env) {
 
     const shareLinks = await loadShareLinks(env);
     const newToken = crypto.randomUUID().substring(0, 8);
+    const defaultPassword = "112233";
+    const hashedPassword = await hashPassword(defaultPassword);
     
     shareLinks[newToken] = {
         username: username,
+        password: hashedPassword,
         created_at: new Date().toISOString()
     };
     
@@ -480,6 +493,92 @@ async function handleTransferItem(request, env) {
   return new Response(JSON.stringify({ success: true }), { status: 200 });
 }
 
+async function handleUpdateTodoText(request, env) {
+    const { id, text, ownerId } = await request.json();
+    if (!id || !text || !ownerId) {
+        return new Response(JSON.stringify({ error: "Missing 'id', 'text', or 'ownerId'" }), { status: 400 });
+    }
+    const kvKey = getKvKey(ownerId);
+    const todos = await loadTodos(env, kvKey);
+    const todoIndex = todos.findIndex(t => t.id === id);
+    if (todoIndex !== -1) {
+        todos[todoIndex].text = text;
+        await saveTodos(env, kvKey, todos);
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ error: "Todo not found" }), { status: 404 });
+}
+
+async function handleAddProgressUpdate(request, env) {
+    const formData = await request.formData();
+    const todoId = formData.get('todoId');
+    const ownerId = formData.get('ownerId');
+    const text = formData.get('text');
+    const imageFile = formData.get('image');
+
+    if (!todoId || !ownerId || !text) {
+        return new Response('Missing required fields', { status: 400 });
+    }
+
+    let creatorId = 'admin';
+    const referer = request.headers.get('Referer');
+    if (referer) {
+        const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
+        const shareLinks = await loadShareLinks(env);
+        if (shareLinks[refererPath]) {
+            creatorId = shareLinks[refererPath].username;
+        }
+    }
+
+    let imageUrl = null;
+    if (imageFile && imageFile.size > 0) {
+        const compressedImage = await compressImage(imageFile);
+        const imageId = crypto.randomUUID();
+        const extension = imageFile.name.split('.').pop();
+        const imageKey = `images/${imageId}.${extension}`;
+        await env.R2_BUCKET.put(imageKey, compressedImage, { httpMetadata: { contentType: imageFile.type } });
+        imageUrl = `/api/${imageKey}`;
+    }
+
+    const newUpdate = {
+        id: crypto.randomUUID(),
+        text,
+        imageUrl,
+        createdAt: new Date().toISOString(),
+        creatorId,
+    };
+
+    const kvKey = getKvKey(ownerId);
+    const todos = await loadTodos(env, kvKey);
+    const todoIndex = todos.findIndex(t => t.id === todoId);
+
+    if (todoIndex !== -1) {
+        if (!todos[todoIndex].progressUpdates) {
+            todos[todoIndex].progressUpdates = [];
+        }
+        todos[todoIndex].progressUpdates.push(newUpdate);
+        await saveTodos(env, kvKey, todos);
+        return new Response(JSON.stringify({ success: true, update: newUpdate }), { status: 200 });
+    }
+
+    return new Response('Todo not found', { status: 404 });
+}
+
+async function handleUpdateItemName(request, env) {
+    const { id, name } = await request.json();
+    if (!id || !name) {
+        return new Response(JSON.stringify({ error: "Missing 'id' or 'name'" }), { status: 400 });
+    }
+    const keptItems = await loadKeptItems(env);
+    const itemIndex = keptItems.findIndex(item => item.id === id);
+    if (itemIndex !== -1) {
+        keptItems[itemIndex].name = name;
+        await saveKeptItems(env, keptItems);
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ error: "Item not found" }), { status: 404 });
+}
+
 async function handleReturnItem(request, env) {
   const referer = request.headers.get('Referer');
   const { id } = await request.json();
@@ -587,6 +686,27 @@ async function handleRestoreItem(request, env) {
   }
 }
 
+async function handleLogin(request, env) {
+    const { username, password } = await request.json();
+    if (!username || !password) {
+        return new Response(JSON.stringify({ error: "Missing 'username' or 'password'" }), { status: 400 });
+    }
+
+    const shareLinks = await loadShareLinks(env);
+    const userToken = Object.keys(shareLinks).find(token => shareLinks[token].username === username);
+
+    if (userToken) {
+        const hashedPassword = await hashPassword(password);
+        if (shareLinks[userToken].password === hashedPassword) {
+            // In a real app, you'd create a session token here.
+            // For now, we'll just return success.
+            return new Response(JSON.stringify({ success: true, token: userToken }), { status: 200 });
+        }
+    }
+
+    return new Response(JSON.stringify({ error: "Invalid credentials" }), { status: 401 });
+}
+
 async function handleApiData(request, env) {
   const url = new URL(request.url);
   const shareLinks = await loadShareLinks(env);
@@ -654,10 +774,16 @@ export async function onRequest(context) {
   switch (path) {
     case '/data':
       return handleApiData(request, env);
+    case '/login':
+      return handleLogin(request, env);
     case '/add_todo':
       return handleAddTodo(request, env);
     case '/update_todo':
       return handleUpdateTodo(request, env);
+    case '/update_todo_text':
+      return handleUpdateTodoText(request, env);
+    case '/add_progress_update':
+      return handleAddProgressUpdate(request, env);
     case '/delete_todo':
       return handleDeleteTodo(request, env);
     case '/add_user':
@@ -670,6 +796,8 @@ export async function onRequest(context) {
       return handleDeleteItem(request, env);
     case '/transfer_item':
       return handleTransferItem(request, env);
+    case '/update_item_name':
+      return handleUpdateItemName(request, env);
     case '/return_item':
       return handleReturnItem(request, env);
     case '/restore_todo':

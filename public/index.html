@@ -1,4 +1,4 @@
-<![CDATA[<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh">
 <head>
   <meta charset="UTF-8" />
@@ -103,7 +103,10 @@
         </form>
 
         <div class="mt-4">
-          <h3 class="text-sm font-semibold mb-2 text-gray-700">当前交接物品</h3>
+          <div class="flex justify-between items-center mb-2">
+            <h3 class="text-sm font-semibold text-gray-700">当前交接物品</h3>
+            <button id="toggle-kept-items" class="text-sm text-blue-600 hover:underline">折叠</button>
+          </div>
           <ul id="kept-items-list" class="space-y-1 text-sm text-gray-500">
             <p class="text-center py-4">无任何交接物品。</p>
           </ul>
@@ -168,6 +171,22 @@
 
   <script src="/script.js"></script>
 
+  <!-- Login Modal -->
+  <div id="login-modal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50" style="display: none;">
+    <div class="bg-white rounded-lg p-8 shadow-2xl w-full max-w-sm">
+      <h2 class="text-2xl font-bold mb-6 text-center text-gray-800">用户登录</h2>
+      <form id="login-form" class="space-y-6">
+        <input type="password" id="password-input" placeholder="请输入密码..." required
+               class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 ease-in-out" />
+        <button type="submit"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-150 ease-in-out">
+          登录
+        </button>
+      </form>
+      <p id="login-error" class="mt-4 text-center text-red-500 text-sm"></p>
+    </div>
+  </div>
+
   <!-- Transfer Item Modal -->
   <div id="transfer-modal" class="fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center" style="display: none;">
     <div class="bg-white rounded-lg p-6 w-full max-w-md">
@@ -181,11 +200,42 @@
           </div>
         </div>
         <div class="flex justify-end space-x-2 mt-4">
-          <button type="button" onclick="closeTransferModal()" class="bg-gray-300 px-4 py-2 rounded-lg">取消</button>
+          <button type="button" onclick="closeModal('transfer-modal')" class="bg-gray-300 px-4 py-2 rounded-lg">取消</button>
           <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg">确认转交</button>
         </div>
       </form>
     </div>
   </div>
+
+  <!-- Edit Todo Modal -->
+  <div id="edit-todo-modal" class="fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center" style="display: none;">
+    <div class="bg-white rounded-lg p-6 w-full max-w-md">
+      <h2 class="text-xl font-bold mb-4">编辑待办事项</h2>
+      <form id="edit-todo-form">
+        <input type="hidden" id="edit-todo-id" name="todoId">
+        <input type="hidden" id="edit-todo-owner" name="ownerId">
+        <input type="text" id="edit-todo-text" name="text" class="w-full p-2 border rounded-lg mb-4" required>
+        <div class="flex justify-end space-x-2">
+          <button type="button" onclick="closeModal('edit-todo-modal')" class="bg-gray-300 px-4 py-2 rounded-lg">取消</button>
+          <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Item Modal -->
+  <div id="edit-item-modal" class="fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center" style="display: none;">
+    <div class="bg-white rounded-lg p-6 w-full max-w-md">
+      <h2 class="text-xl font-bold mb-4">编辑物品</h2>
+      <form id="edit-item-form">
+        <input type="hidden" id="edit-item-id" name="itemId">
+        <input type="text" id="edit-item-name" name="name" class="w-full p-2 border rounded-lg mb-4" required>
+        <div class="flex justify-end space-x-2">
+          <button type="button" onclick="closeModal('edit-item-modal')" class="bg-gray-300 px-4 py-2 rounded-lg">取消</button>
+          <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
 </body>
-</html>]]>
+</html>

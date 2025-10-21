@@ -1,12 +1,56 @@
 let initialData; // Declare initialData globally
+let currentUser = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
+  const pathToken = window.location.pathname.substring(1).split('/')[0].toLowerCase();
+
+  // A quick fetch to get user data for login, not the full dataset yet.
+  const data = await fetch('/api/data').then(res => res.json()).catch(() => ({ shareLinks: {} }));
+  const shareLinks = data.shareLinks;
+
+  const isAdminView = !pathToken || !shareLinks[pathToken];
+
+  if (isAdminView) {
+    currentUser = 'admin'; // Assuming admin doesn't need a password for this setup
+    document.getElementById('login-modal').style.display = 'none';
+    initializePage();
+  } else {
+    currentUser = shareLinks[pathToken].username;
+    document.getElementById('login-modal').style.display = 'flex';
+  }
+
+  document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const password = document.getElementById('password-input').value;
+    const response = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: currentUser, password }),
+    });
+
+    if (response.ok) {
+      document.getElementById('login-modal').style.display = 'none';
+      initializePage();
+    } else {
+      const errorP = document.getElementById('login-error');
+      errorP.textContent = '密码错误，请重试。';
+      setTimeout(() => errorP.textContent = '', 3000); // Clear error after 3 seconds
+    }
+  });
+});
+
+async function initializePage() {
   lucide.createIcons();
   refreshFsLightbox();
 
   // Fetch initial data
   initialData = await fetch('/api/data').then(res => res.json());
   const { allTodos, recentDeletedTodos, keptItems, recentDeletedItems, shareLinks, isRootView } = initialData;
+
+  // Hide user management for non-admin users
+  if (currentUser !== 'admin') {
+    document.querySelector('.card:has(h2:contains("用户管理"))').style.display = 'none';
+  }
 
   // Render Todo User Options
   const todoUserOptionsContainer = document.getElementById('todo-user-options');
@@ -190,7 +234,39 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
   }
-});
+
+  document.querySelectorAll('.add-progress-form').forEach(form => {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const todoId = form.dataset.todoId;
+      const ownerId = form.dataset.ownerId;
+      const text = form.querySelector('textarea[name="text"]').value;
+      const imageFile = form.querySelector('input[name="image"]').files[0];
+
+      const formData = new FormData();
+      formData.append('todoId', todoId);
+      formData.append('ownerId', ownerId);
+      formData.append('text', text);
+      if (imageFile) {
+        formData.append('image', imageFile);
+      }
+
+      await fetch('/api/add_progress_update', {
+        method: 'POST',
+        body: formData,
+      });
+      window.location.reload();
+    });
+  });
+
+  const toggleButton = document.getElementById('toggle-kept-items');
+  const keptItemsList = document.getElementById('kept-items-list');
+  toggleButton.addEventListener('click', () => {
+    const isHidden = keptItemsList.style.display === 'none';
+    keptItemsList.style.display = isHidden ? '' : 'none';
+    toggleButton.textContent = isHidden ? '折叠' : '展开';
+  });
+}
 
 // Helper functions (moved from backend)
 function getDisplayName(userId) {
@@ -299,6 +375,7 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
               ${returnInfo}
             </div>
             <div class="flex flex-col space-y-1 ml-2">
+                <button class="bg-yellow-500 text-white px-2 py-1 text-xs rounded" onclick="showEditItemModal('${item.id}', '${item.name}')">编辑</button>
                 <button class="bg-blue-500 text-white px-2 py-1 text-xs rounded" onclick="showTransferModal('${item.id}')">转交</button>
                 <button class="bg-green-500 text-white px-2 py-1 text-xs rounded" onclick="returnItem('${item.id}')" ${item.returnedAt ? 'disabled' : ''}>归还</button>
                 <button class="delete-btn" style="padding: 2px 6px; font-size: 12px;" onclick="deleteItem('${item.id}')">删除</button>
@@ -313,6 +390,7 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
                 <div class="text-xs text-red-500">注意: 此物品为旧数据格式。请转交一次以更新。</div>
               </div>
             <div class="flex flex-col space-y-1 ml-2">
+                <button class="bg-yellow-500 text-white px-2 py-1 text-xs rounded" onclick="showEditItemModal('${item.id}', '${item.name}')">编辑</button>
                 <button class="bg-blue-500 text-white px-2 py-1 text-xs rounded" onclick="showTransferModal('${item.id}')">转交</button>
                 <button class="bg-green-500 text-white px-2 py-1 text-xs rounded" onclick="returnItem('${item.id}')" ${item.returnedAt ? 'disabled' : ''}>归还</button>
                 <button class="delete-btn" style="padding: 2px 6px; font-size: 12px;" onclick="deleteItem('${item.id}')">删除</button>
@@ -340,6 +418,9 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
           <div class="meta-info text-sm text-gray-500">由 <strong>${creatorDisplayName}</strong> 在 ${formatDate(todo.createdAt)} 创建${ownerInfo}${completionInfo}</div>
         </div>
         <div class="flex items-center space-x-2 ml-auto">
+          <button class="edit-btn bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg text-sm" onclick="showEditTodoModal('${todo.id}', '${todo.text}', '${todo.ownerId}')">
+            编辑
+          </button>
           <button class="delete-btn bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg text-sm" onclick="deleteTodo('${todo.id}', '${todo.ownerId}')">
             删除
           </button>
@@ -347,6 +428,25 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
       </div>
       ${associatedItemsHtml ? `<div class="w-full mt-2">${associatedItemsHtml}</div>` : ''}
       ${activityLogHtml}
+      <div class="progress-updates mt-4 pt-4 border-t">
+        <h4 class="text-md font-semibold mb-2">进度更新</h4>
+        <div id="progress-list-${todo.id}" class="space-y-4">
+          ${(todo.progressUpdates || []).map(update => `
+            <div class="flex items-start">
+              ${update.imageUrl ? `<a data-fslightbox href="${update.imageUrl}"><img src="${update.imageUrl}" alt="Progress Image" class="w-16 h-16 object-cover rounded-md mr-4"></a>` : ''}
+              <div class="flex-grow">
+                <p class="text-gray-800">${update.text}</p>
+                <div class="text-xs text-gray-500 mt-1">由 <strong>${getDisplayName(update.creatorId)}</strong> 在 ${formatDate(update.createdAt)} 添加</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        <form class="add-progress-form mt-4" data-todo-id="${todo.id}" data-owner-id="${todo.ownerId}">
+          <textarea name="text" placeholder="添加进度更新..." class="w-full p-2 border rounded-lg" required></textarea>
+          <input type="file" name="image" accept="image/*" class="w-full text-sm border rounded-lg p-1 mt-2">
+          <button type="submit" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-2 px-4 rounded-lg mt-2">添加更新</button>
+        </form>
+      </div>
     </li>
   `}).join('');
 }
@@ -413,6 +513,7 @@ function renderKeptItems(keptItems, shareLinks) {
               ${returnInfo}
             </div>
             <div class="flex flex-col space-y-1 ml-2">
+                <button class="bg-yellow-500 text-white px-2 py-1 text-xs rounded" onclick="showEditItemModal('${item.id}', '${item.name}')">编辑</button>
                 <button class="bg-blue-500 text-white px-2 py-1 text-xs rounded" onclick="showTransferModal('${item.id}')">转交</button>
                 <button class="bg-green-500 text-white px-2 py-1 text-xs rounded" onclick="returnItem('${item.id}')" ${item.returnedAt ? 'disabled' : ''}>归还</button>
                 <button class="delete-btn" style="padding: 2px 6px; font-size: 12px;" onclick="deleteItem('${item.id}')">删除</button>
@@ -427,6 +528,7 @@ function renderKeptItems(keptItems, shareLinks) {
               <div class="text-xs text-red-500">注意: 此物品为旧数据格式。请转交一次以更新。</div>
             </div>
             <div class="flex flex-col space-y-1 ml-2">
+                <button class="bg-yellow-500 text-white px-2 py-1 text-xs rounded" onclick="showEditItemModal('${item.id}', '${item.name}')">编辑</button>
                 <button class="bg-blue-500 text-white px-2 py-1 text-xs rounded" onclick="showTransferModal('${item.id}')">转交</button>
                 <button class="delete-btn" style="padding: 2px 6px; font-size: 12px;" onclick="deleteItem('${item.id}')">删除</button>
             </div>
@@ -615,7 +717,47 @@ function showTransferModal(itemId) {
     modal.style.display = 'flex';
 }
 
-function closeTransferModal() {
-    const modal = document.getElementById('transfer-modal');
+function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
     modal.style.display = 'none';
 }
+
+function showEditTodoModal(id, text, ownerId) {
+    document.getElementById('edit-todo-id').value = id;
+    document.getElementById('edit-todo-text').value = text;
+    document.getElementById('edit-todo-owner').value = ownerId;
+    document.getElementById('edit-todo-modal').style.display = 'flex';
+}
+
+function showEditItemModal(id, name) {
+    document.getElementById('edit-item-id').value = id;
+    document.getElementById('edit-item-name').value = name;
+    document.getElementById('edit-item-modal').style.display = 'flex';
+}
+
+document.getElementById('edit-todo-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('edit-todo-id').value;
+    const text = document.getElementById('edit-todo-text').value;
+    const ownerId = document.getElementById('edit-todo-owner').value;
+
+    await fetch('/api/update_todo_text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, text, ownerId }),
+    });
+    window.location.reload();
+});
+
+document.getElementById('edit-item-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('edit-item-id').value;
+    const name = document.getElementById('edit-item-name').value;
+
+    await fetch('/api/update_item_name', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name }),
+    });
+    window.location.reload();
+});
