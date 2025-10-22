@@ -1135,7 +1135,7 @@ async function exportTodoAsHtml(todoId) {
   const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  const safeFilename = todo.text.replace(/[^a-z0-9\\u4e00-\\u9fa5]/gi, '_').substring(0, 50);
+  const safeFilename = todo.text.replace(/[\\/\\?%\\*:\\|"<>]/g, '_').substring(0, 50);
   const creationDate = new Date(todo.createdAt).toISOString().split('T')[0];
   link.download = `${safeFilename}_${creationDate}.html`;
   document.body.appendChild(link);
