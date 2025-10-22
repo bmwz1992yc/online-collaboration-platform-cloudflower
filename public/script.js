@@ -302,11 +302,21 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
       completionInfo = ` | (上次由 <strong>${getDisplayName(todo.completedBy)}</strong> 在 ${formatDate(todo.completedAt)} 完成)`;
     }
 
-    const attachmentHtml = todo.attachmentUrl ?
-      (todo.attachmentUrl.type.startsWith('image/') ?
-        `<a data-fslightbox href="${todo.attachmentUrl.url}"><img src="${todo.attachmentUrl.url}" alt="${todo.attachmentUrl.name}" class="w-16 h-16 object-cover rounded-md mr-4"></a>` :
-        `<a href="${todo.attachmentUrl.url}" target="_blank" class="text-blue-600 hover:underline mr-4">${todo.attachmentUrl.name}</a>`
-      ) : '';
+    let attachmentHtml = '';
+    const attachment = todo.attachmentUrl || todo.imageUrl; // Check both new and old properties
+    if (attachment) {
+        if (typeof attachment === 'string') {
+            // Old format: it's a URL string, and it must be an image.
+            attachmentHtml = `<a data-fslightbox href="${attachment}"><img src="${attachment}" alt="Todo Image" class="w-16 h-16 object-cover rounded-md mr-4"></a>`;
+        } else if (typeof attachment === 'object' && attachment.url) {
+            // New format: it's an object.
+            if (attachment.type.startsWith('image/')) {
+                attachmentHtml = `<a data-fslightbox href="${attachment.url}"><img src="${attachment.url}" alt="${attachment.name}" class="w-16 h-16 object-cover rounded-md mr-4"></a>`;
+            } else {
+                attachmentHtml = `<a href="${attachment.url}" target="_blank" class="text-blue-600 hover:underline mr-4">${attachment.name}</a>`;
+            }
+        }
+    }
 
     const formatActivity = (logEntry) => {
       const actor = `<strong>${getDisplayName(logEntry.actorId)}</strong>`;
@@ -551,11 +561,21 @@ function renderKeptItems(keptItems, shareLinks) {
         `;
     }
 
-    const attachmentHtml = item.attachmentUrl ?
-      (item.attachmentUrl.type.startsWith('image/') ?
-        `<a data-fslightbox href="${item.attachmentUrl.url}"><img src="${item.attachmentUrl.url}" alt="${item.attachmentUrl.name}" class="w-16 h-16 object-cover rounded-md mr-4"></a>` :
-        `<a href="${item.attachmentUrl.url}" target="_blank" class="text-blue-600 hover:underline mr-4">${item.attachmentUrl.name}</a>`
-      ) : '';
+    let attachmentHtml = '';
+    const attachment = item.attachmentUrl || item.imageUrl; // Check both new and old properties
+    if (attachment) {
+        if (typeof attachment === 'string') {
+            // Old format: it's a URL string, and it must be an image.
+            attachmentHtml = `<a data-fslightbox href="${attachment}"><img src="${attachment}" alt="Item Image" class="w-16 h-16 object-cover rounded-md mr-4"></a>`;
+        } else if (typeof attachment === 'object' && attachment.url) {
+            // New format: it's an object.
+            if (attachment.type.startsWith('image/')) {
+                attachmentHtml = `<a data-fslightbox href="${attachment.url}"><img src="${attachment.url}" alt="${attachment.name}" class="w-16 h-16 object-cover rounded-md mr-4"></a>`;
+            } else {
+                attachmentHtml = `<a href="${attachment.url}" target="_blank" class="text-blue-600 hover:underline mr-4">${attachment.name}</a>`;
+            }
+        }
+    }
     return `
       <li data-id="${item.id}" class="p-4 bg-white rounded-lg shadow-sm flex items-start">
         ${attachmentHtml}
@@ -925,13 +945,24 @@ function showAddProgressForm(todoId) {
 
 function renderProgress(progress) {
   return progress.map(p => {
-    const attachmentsHtml = p.attachmentUrls ? p.attachmentUrls.map(file => {
-      if (file.type.startsWith('image/')) {
-        return `<a data-fslightbox href="${file.url}"><img src="${file.url}" alt="${file.name}" class="w-12 h-12 object-cover rounded-md ml-3"></a>`;
-      } else {
-        return `<a href="${file.url}" target="_blank" class="text-blue-600 hover:underline ml-3">${file.name}</a>`;
-      }
-    }).join('') : '';
+    let attachmentsHtml = '';
+    const attachments = p.attachmentUrls || p.imageUrls; // Check for new and old properties
+    if (attachments && attachments.length > 0) {
+        attachmentsHtml = attachments.map(file => {
+            if (typeof file === 'string') {
+                // Old format: URL string, must be an image
+                return `<a data-fslightbox href="${file}"><img src="${file}" alt="Progress Image" class="w-12 h-12 object-cover rounded-md ml-3"></a>`;
+            } else if (typeof file === 'object' && file.url) {
+                // New format: object
+                if (file.type.startsWith('image/')) {
+                    return `<a data-fslightbox href="${file.url}"><img src="${file.url}" alt="${file.name}" class="w-12 h-12 object-cover rounded-md ml-3"></a>`;
+                } else {
+                    return `<a href="${file.url}" target="_blank" class="text-blue-600 hover:underline ml-3">${file.name}</a>`;
+                }
+            }
+            return '';
+        }).join('');
+    }
     return `
       <div data-id="${p.id}" class="flex items-start" style="padding-left: 60px; padding-top: 10px;">
         <i data-lucide="git-commit-horizontal" class="w-4 h-4 text-green-600 mr-2 mt-1"></i>
