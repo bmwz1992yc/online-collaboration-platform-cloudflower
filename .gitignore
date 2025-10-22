@@ -1,0 +1,3 @@
+# Wrangler/Cloudflare Pages local development artifacts
+.wrangler/
+*.log

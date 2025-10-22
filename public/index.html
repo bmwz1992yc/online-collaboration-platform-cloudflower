@@ -103,8 +103,11 @@
         </form>
 
         <div class="mt-4">
-          <h3 class="text-sm font-semibold mb-2 text-gray-700">当前交接物品</h3>
-          <ul id="kept-items-list" class="space-y-1 text-sm text-gray-500">
+          <button class="flex items-center justify-between w-full text-left text-sm font-semibold mb-2 text-gray-700" onclick="toggleKeptItems(this)">
+            <span>当前交接物品</span>
+            <i data-lucide="chevron-down" class="w-4 h-4"></i>
+          </button>
+          <ul id="kept-items-list" class="space-y-1 text-sm text-gray-500 hidden">
             <p class="text-center py-4">无任何交接物品。</p>
           </ul>
         </div>
@@ -161,6 +164,10 @@
       <h3 class="text-lg font-semibold mt-4 mb-2 text-gray-700">已删除物品</h3>
       <ul id="deleted-items-list" class="space-y-3 text-sm text-gray-500">
         <p class="text-center py-4">无已删除物品。</p>
+      </ul>
+      <h3 class="text-lg font-semibold mt-4 mb-2 text-gray-700">已删除进度</h3>
+      <ul id="deleted-progress-list" class="space-y-3 text-sm text-gray-500">
+        <p class="text-center py-4">无已删除进度。</p>
       </ul>
     </section>
 
