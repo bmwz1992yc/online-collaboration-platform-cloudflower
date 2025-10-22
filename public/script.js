@@ -87,14 +87,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       const name = document.getElementById('item-name').value;
       const keepers = Array.from(document.querySelectorAll('#item-keeper-checkboxes input[name="itemUserIds"]:checked')).map(cb => cb.value);
       const todoId = document.getElementById('item-todo-id').value;
-      const imageFile = document.getElementById('item-image').files[0];
+      const attachmentFile = document.getElementById('item-attachment').files[0];
 
       const formData = new FormData();
       formData.append('name', name);
       keepers.forEach(k => formData.append('keepers', k));
       formData.append('todoId', todoId);
-      if (imageFile) {
-        formData.append('image', imageFile);
+      if (attachmentFile) {
+        formData.append('attachment', attachmentFile);
       }
 
       try {
@@ -152,7 +152,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     addTodoForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const text = addTodoForm.querySelector('input[name="text"]').value;
-      const imageFile = addTodoForm.querySelector('input[name="image"]').files[0];
+      const attachmentFile = addTodoForm.querySelector('input[name="attachment"]').files[0];
       const creatorId = addTodoForm.querySelector('input[name="creatorId"]').value;
       const userIds = Array.from(addTodoForm.querySelectorAll('input[name="userIds"]:checked')).map(cb => cb.value);
 
@@ -160,8 +160,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       formData.append('text', text);
       formData.append('creatorId', creatorId);
       userIds.forEach(id => formData.append('userIds', id));
-      if (imageFile) {
-        formData.append('image', imageFile);
+      if (attachmentFile) {
+        formData.append('attachment', attachmentFile);
       }
 
       try {
@@ -302,7 +302,21 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
       completionInfo = ` | (上次由 <strong>${getDisplayName(todo.completedBy)}</strong> 在 ${formatDate(todo.completedAt)} 完成)`;
     }
 
-    const imageUrlHtml = todo.imageUrl ? `<a data-fslightbox href="${todo.imageUrl}"><img src="${todo.imageUrl}" alt="Todo Image" class="w-16 h-16 object-cover rounded-md mr-4"></a>` : '';
+    let attachmentHtml = '';
+    const attachment = todo.attachmentUrl || todo.imageUrl; // Check both new and old properties
+    if (attachment) {
+        if (typeof attachment === 'string') {
+            // Old format: it's a URL string, and it must be an image.
+            attachmentHtml = `<a data-fslightbox href="${attachment}"><img src="${attachment}" alt="Todo Image" class="w-16 h-16 object-cover rounded-md mr-4"></a>`;
+        } else if (typeof attachment === 'object' && attachment.url) {
+            // New format: it's an object.
+            if (attachment.type.startsWith('image/')) {
+                attachmentHtml = `<a data-fslightbox href="${attachment.url}"><img src="${attachment.url}" alt="${attachment.name}" class="w-16 h-16 object-cover rounded-md mr-4"></a>`;
+            } else {
+                attachmentHtml = `<a href="${attachment.url}" target="_blank" class="text-blue-600 hover:underline mr-4">${attachment.name}</a>`;
+            }
+        }
+    }
 
     const formatActivity = (logEntry) => {
       const actor = `<strong>${getDisplayName(logEntry.actorId)}</strong>`;
@@ -426,7 +440,7 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
       <div class="flex items-center">
         <button onclick="toggleTodoDetails(this, '${todo.id}')" class="mr-4"><i data-lucide="chevron-right"></i></button>
         <input type="checkbox" id="todo-${todo.id}" ${todo.completed ? 'checked' : ''} onchange="toggleTodo('${todo.id}', this.checked, '${todo.ownerId}')" class="mr-4 w-6 h-6 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500">
-        ${imageUrlHtml}
+        ${attachmentHtml}
         <div class="flex-grow">
           <label class="text-2xl font-medium text-gray-800">${todo.text}</label>
           <div class="meta-info text-sm text-gray-500">由 <strong>${creatorDisplayName}</strong> 在 ${formatDate(todo.createdAt)} 创建${ownerInfo}${completionInfo}</div>
@@ -450,7 +464,7 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
         <div id="progress-form-${todo.id}" class="hidden mt-4">
           <form onsubmit="addProgress(event, '${todo.id}')">
             <textarea name="progress_text" placeholder="添加新的进度..." required class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-300"></textarea>
-            <input type="file" name="progress_image" accept="image/*" class="w-full text-sm border rounded-lg p-1 mt-2" multiple>
+            <input type="file" name="progress_attachments" class="w-full text-sm border rounded-lg p-1 mt-2" multiple>
             <button type="submit" class="w-full bg-blue-600 text-white font-medium py-2 px-4 rounded-lg mt-2">提交</button>
           </form>
         </div>
@@ -547,10 +561,24 @@ function renderKeptItems(keptItems, shareLinks) {
         `;
     }
 
-    const imageUrlHtml = item.imageUrl ? `<a data-fslightbox href="${item.imageUrl}"><img src="${item.imageUrl}" alt="Item Image" class="w-16 h-16 object-cover rounded-md mr-4"></a>` : '';
+    let attachmentHtml = '';
+    const attachment = item.attachmentUrl || item.imageUrl; // Check both new and old properties
+    if (attachment) {
+        if (typeof attachment === 'string') {
+            // Old format: it's a URL string, and it must be an image.
+            attachmentHtml = `<a data-fslightbox href="${attachment}"><img src="${attachment}" alt="Item Image" class="w-16 h-16 object-cover rounded-md mr-4"></a>`;
+        } else if (typeof attachment === 'object' && attachment.url) {
+            // New format: it's an object.
+            if (attachment.type.startsWith('image/')) {
+                attachmentHtml = `<a data-fslightbox href="${attachment.url}"><img src="${attachment.url}" alt="${attachment.name}" class="w-16 h-16 object-cover rounded-md mr-4"></a>`;
+            } else {
+                attachmentHtml = `<a href="${attachment.url}" target="_blank" class="text-blue-600 hover:underline mr-4">${attachment.name}</a>`;
+            }
+        }
+    }
     return `
       <li data-id="${item.id}" class="p-4 bg-white rounded-lg shadow-sm flex items-start">
-        ${imageUrlHtml}
+        ${attachmentHtml}
         ${itemHtml}
       </li>
     `;
@@ -640,20 +668,61 @@ async function editTodo(id, ownerId, currentText) {
 }
 
 async function editItem(id, currentName) {
-  // Use a more generic selector to find the item element, whether it's in a div or li
-  const itemElement = document.querySelector(`[data-id='${id}'] .flex-grow`);
-  if (!itemElement) {
-    console.error("Could not find item element with id:", id);
-    alert('无法找到要编辑的物品，请刷新页面后重试。');
+  const itemDiv = document.querySelector(`[data-id='${id}']`);
+  if (!itemDiv) {
+      console.error("Could not find item element with id:", id);
+      alert('无法找到要编辑的物品，请刷新页面后重试。');
+      return;
+  }
+
+  const labelContainer = itemDiv.querySelector('.flex-grow > div:first-child');
+  if (!labelContainer) {
+    // Fallback for older data structure or different layout
+    const label = itemDiv.querySelector('label');
+    if(label) label.style.display = 'none'; else return;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentName;
+    input.className = 'font-semibold text-gray-700 w-full p-1 border rounded';
+
+    // Simplified logic for fallback
+    const saveChanges = async () => {
+        const newName = input.value;
+        if (newName && newName !== currentName) {
+            try {
+                const response = await fetch('/api/update_item_name', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, name: newName }),
+                });
+                if (!response.ok) throw new Error('更新物品名称失败');
+                await refreshDataAndRender();
+            } catch (error) {
+                console.error("Update item name failed:", error);
+                alert('更新物品名称失败，请重试。');
+                if(label) label.style.display = 'block';
+                input.remove();
+            }
+        } else {
+            if(label) label.style.display = 'block';
+            input.remove();
+        }
+    };
+    input.addEventListener('blur', saveChanges);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveChanges(); });
+    label.parentNode.insertBefore(input, label.nextSibling);
+    input.focus();
     return;
   }
-  const label = itemElement.querySelector('label');
-  label.style.display = 'none';
+
+  const originalDisplay = labelContainer.style.display;
+  labelContainer.style.display = 'none';
 
   const input = document.createElement('input');
   input.type = 'text';
   input.value = currentName;
-  input.className = 'font-semibold text-gray-700 w-full';
+  input.className = 'font-semibold text-gray-700 w-full p-1 border rounded';
 
   const saveChanges = async () => {
     const newName = input.value;
@@ -669,9 +738,11 @@ async function editItem(id, currentName) {
       } catch (error) {
         console.error("Update item name failed:", error);
         alert('更新物品名称失败，请重试。');
+        labelContainer.style.display = originalDisplay;
+        input.remove();
       }
     } else {
-      label.style.display = 'block';
+      labelContainer.style.display = originalDisplay;
       input.remove();
     }
   };
@@ -679,11 +750,15 @@ async function editItem(id, currentName) {
   input.addEventListener('blur', saveChanges);
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
+      e.preventDefault();
       saveChanges();
+    } else if (e.key === 'Escape') {
+      labelContainer.style.display = originalDisplay;
+      input.remove();
     }
   });
 
-  itemElement.insertBefore(input, label.nextSibling);
+  labelContainer.parentNode.insertBefore(input, labelContainer.nextSibling);
   input.focus();
 }
 
@@ -870,7 +945,24 @@ function showAddProgressForm(todoId) {
 
 function renderProgress(progress) {
   return progress.map(p => {
-    const imageUrlsHtml = p.imageUrls ? p.imageUrls.map(url => `<a data-fslightbox href="${url}"><img src="${url}" alt="Progress Image" class="w-12 h-12 object-cover rounded-md ml-3"></a>`).join('') : '';
+    let attachmentsHtml = '';
+    const attachments = p.attachmentUrls || p.imageUrls; // Check for new and old properties
+    if (attachments && attachments.length > 0) {
+        attachmentsHtml = attachments.map(file => {
+            if (typeof file === 'string') {
+                // Old format: URL string, must be an image
+                return `<a data-fslightbox href="${file}"><img src="${file}" alt="Progress Image" class="w-12 h-12 object-cover rounded-md ml-3"></a>`;
+            } else if (typeof file === 'object' && file.url) {
+                // New format: object
+                if (file.type.startsWith('image/')) {
+                    return `<a data-fslightbox href="${file.url}"><img src="${file.url}" alt="${file.name}" class="w-12 h-12 object-cover rounded-md ml-3"></a>`;
+                } else {
+                    return `<a href="${file.url}" target="_blank" class="text-blue-600 hover:underline ml-3">${file.name}</a>`;
+                }
+            }
+            return '';
+        }).join('');
+    }
     return `
       <div data-id="${p.id}" class="flex items-start" style="padding-left: 60px; padding-top: 10px;">
         <i data-lucide="git-commit-horizontal" class="w-4 h-4 text-green-600 mr-2 mt-1"></i>
@@ -879,7 +971,7 @@ function renderProgress(progress) {
             <label class="font-semibold text-gray-700">[进度] ${p.text}</label>
             <div class="meta-info">由 <strong>${getDisplayName(p.creatorId)}</strong> 在 ${formatDate(p.createdAt)} 添加</div>
           </div>
-          ${imageUrlsHtml}
+          <div class="flex items-center flex-wrap">${attachmentsHtml}</div>
         </div>
         <div class="flex flex-col space-y-1 ml-2">
           <button class="bg-yellow-500 text-white px-2 py-1 text-xs rounded" onclick="editProgress('${p.id}', \`${p.text}\`)">修改</button>
@@ -894,13 +986,13 @@ async function addProgress(event, todoId) {
   event.preventDefault();
   const form = event.target;
   const text = form.querySelector('textarea[name="progress_text"]').value;
-  const imageFiles = form.querySelector('input[name="progress_image"]').files;
+  const attachmentFiles = form.querySelector('input[name="progress_attachments"]').files;
 
   const formData = new FormData();
   formData.append('todoId', todoId);
   formData.append('text', text);
-  for (const file of imageFiles) {
-    formData.append('images', file);
+  for (const file of attachmentFiles) {
+    formData.append('attachments', file);
   }
 
   try {
@@ -918,14 +1010,19 @@ async function addProgress(event, todoId) {
 }
 
 async function editProgress(id, currentText) {
-  const progressElement = document.querySelector(`div[data-id='${id}'] .flex-grow`);
-  const label = progressElement.querySelector('label');
-  label.style.display = 'none';
+  const progressDiv = document.querySelector(`div[data-id='${id}']`);
+  if (!progressDiv) return;
+
+  const labelContainer = progressDiv.querySelector('.flex-grow > div:first-child');
+  if (!labelContainer) return;
+
+  const originalDisplay = labelContainer.style.display;
+  labelContainer.style.display = 'none';
 
   const input = document.createElement('input');
   input.type = 'text';
   input.value = currentText;
-  input.className = 'font-semibold text-gray-700 w-full';
+  input.className = 'font-semibold text-gray-700 w-full p-1 border rounded'; // Added some basic styling
 
   const saveChanges = async () => {
     const newText = input.value;
@@ -937,13 +1034,18 @@ async function editProgress(id, currentText) {
           body: JSON.stringify({ id, text: newText }),
         });
         if (!response.ok) throw new Error('更新进度失败');
+        // On success, refreshDataAndRender will rebuild the element.
         await refreshDataAndRender();
       } catch (error) {
         console.error("Update progress failed:", error);
         alert('更新进度失败，请重试。');
+        // Restore UI on failure
+        labelContainer.style.display = originalDisplay;
+        input.remove();
       }
     } else {
-      label.style.display = 'block';
+      // If no change, just restore the view
+      labelContainer.style.display = originalDisplay;
       input.remove();
     }
   };
@@ -951,11 +1053,16 @@ async function editProgress(id, currentText) {
   input.addEventListener('blur', saveChanges);
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
+      e.preventDefault(); // Prevent form submission if it's in a form
       saveChanges();
+    } else if (e.key === 'Escape') {
+      labelContainer.style.display = originalDisplay;
+      input.remove();
     }
   });
 
-  progressElement.insertBefore(input, label.nextSibling);
+  // Insert the input field right after the hidden label container
+  labelContainer.parentNode.insertBefore(input, labelContainer.nextSibling);
   input.focus();
 }
 
@@ -1011,12 +1118,12 @@ async function restoreProgress(id) {
   }
 }
 
-async function imageUrlToDataUri(url) {
-  if (!url) return null;
+async function fileToDataUri(file) {
+  if (!file || !file.url) return null;
   try {
-    const response = await fetch(url);
+    const response = await fetch(file.url);
     if (!response.ok) {
-      console.warn(`Failed to fetch image for data URI conversion: ${url}, status: ${response.status}`);
+      console.warn(`Failed to fetch file for data URI conversion: ${file.url}, status: ${response.status}`);
       return null;
     }
     const blob = await response.blob();
@@ -1024,13 +1131,13 @@ async function imageUrlToDataUri(url) {
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result);
       reader.onerror = (err) => {
-        console.error(`FileReader error for URL ${url}:`, err);
+        console.error(`FileReader error for URL ${file.url}:`, err);
         reject(err);
       };
       reader.readAsDataURL(blob);
     });
   } catch (error) {
-    console.error(`Error converting image to data URI for URL ${url}:`, error);
+    console.error(`Error converting file to data URI for URL ${file.url}:`, error);
     return null;
   }
 }
@@ -1044,31 +1151,36 @@ async function exportTodoAsHtml(todoId) {
 
   const associatedItems = initialData.keptItems.filter(item => item.todoId === todo.id && !item.deletedAt);
 
-  let todoImageHtml = '';
-  if (todo.imageUrl) {
-    const dataUri = await imageUrlToDataUri(todo.imageUrl);
-    if (dataUri) {
-      todoImageHtml = `<div class="image-attachment"><img src="${dataUri}" alt="Todo Image"></div>`;
+  const generateAttachmentHtml = async (file) => {
+    if (!file) return '';
+    const dataUri = await fileToDataUri(file);
+    if (!dataUri) return `<p class="attachment-missing">无法加载附件: ${file.name}</p>`;
+
+    if (file.type.startsWith('image/')) {
+      return `<div class="image-attachment"><img src="${dataUri}" alt="${file.name}"></div>`;
+    } else if (file.type === 'application/pdf') {
+      return `<div class="pdf-attachment"><embed src="${dataUri}" type="application/pdf" width="100%" height="500px" /></div>`;
+    } else {
+      return `<div class="other-attachment"><p>附件: <a href="${dataUri}" download="${file.name}">${file.name}</a> (请右键另存为)</p></div>`;
     }
-  }
+  };
+
+  let todoAttachmentHtml = todo.attachmentUrl ? await generateAttachmentHtml(todo.attachmentUrl) : '';
 
   let progressHtml = '';
   if (todo.progress && todo.progress.length > 0) {
     for (const p of todo.progress) {
-      let progressImagesHtml = '';
-      if (p.imageUrls && p.imageUrls.length > 0) {
-        for (const url of p.imageUrls) {
-          const dataUri = await imageUrlToDataUri(url);
-          if (dataUri) {
-            progressImagesHtml += `<div class="image-attachment"><img src="${dataUri}" alt="Progress Image"></div>`;
-          }
+      let progressAttachmentsHtml = '';
+      if (p.attachmentUrls && p.attachmentUrls.length > 0) {
+        for (const file of p.attachmentUrls) {
+          progressAttachmentsHtml += await generateAttachmentHtml(file);
         }
       }
       progressHtml += `
         <div class="progress-item">
           <p><strong>[进度] ${p.text}</strong></p>
           <p class="meta">由 ${getDisplayName(p.creatorId)} 在 ${formatDate(p.createdAt)} 添加</p>
-          ${progressImagesHtml}
+          ${progressAttachmentsHtml}
         </div>
       `;
     }
@@ -1078,18 +1190,13 @@ async function exportTodoAsHtml(todoId) {
   if (associatedItems.length > 0) {
     for (const item of associatedItems) {
       const keepersDisplay = item.keepers[item.keepers.length - 1].userIds.map(getDisplayName).join(', ');
-      let itemImageHtml = '';
-      if (item.imageUrl) {
-        const dataUri = await imageUrlToDataUri(item.imageUrl);
-        if (dataUri) {
-          itemImageHtml = `<div class="image-attachment"><img src="${dataUri}" alt="Item Image"></div>`;
-        }
-      }
+      let itemAttachmentHtml = item.attachmentUrl ? await generateAttachmentHtml(item.attachmentUrl) : '';
+
       itemsHtml += `
         <div class="kept-item">
           <p><strong>[物品] ${item.name}</strong></p>
           <p class="meta">当前保管人: ${keepersDisplay}</p>
-          ${itemImageHtml}
+          ${itemAttachmentHtml}
         </div>
       `;
     }
@@ -1117,7 +1224,7 @@ async function exportTodoAsHtml(todoId) {
       <h1>事项: <span class="${todo.completed ? 'completed' : ''}">${todo.text}</span></h1>
       <p class="meta">由 ${getDisplayName(todo.creatorId)} 在 ${formatDate(todo.createdAt)} 创建</p>
       ${todo.completed ? `<p class="meta">由 ${getDisplayName(todo.completedBy)} 在 ${formatDate(todo.completedAt)} 完成</p>` : ''}
-      ${todoImageHtml}
+      ${todoAttachmentHtml}
 
       <div class="section">
         <h2>进度更新</h2>
