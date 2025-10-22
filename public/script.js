@@ -648,20 +648,61 @@ async function editTodo(id, ownerId, currentText) {
 }
 
 async function editItem(id, currentName) {
-  // Use a more generic selector to find the item element, whether it's in a div or li
-  const itemElement = document.querySelector(`[data-id='${id}'] .flex-grow`);
-  if (!itemElement) {
-    console.error("Could not find item element with id:", id);
-    alert('无法找到要编辑的物品，请刷新页面后重试。');
+  const itemDiv = document.querySelector(`[data-id='${id}']`);
+  if (!itemDiv) {
+      console.error("Could not find item element with id:", id);
+      alert('无法找到要编辑的物品，请刷新页面后重试。');
+      return;
+  }
+
+  const labelContainer = itemDiv.querySelector('.flex-grow > div:first-child');
+  if (!labelContainer) {
+    // Fallback for older data structure or different layout
+    const label = itemDiv.querySelector('label');
+    if(label) label.style.display = 'none'; else return;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentName;
+    input.className = 'font-semibold text-gray-700 w-full p-1 border rounded';
+
+    // Simplified logic for fallback
+    const saveChanges = async () => {
+        const newName = input.value;
+        if (newName && newName !== currentName) {
+            try {
+                const response = await fetch('/api/update_item_name', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, name: newName }),
+                });
+                if (!response.ok) throw new Error('更新物品名称失败');
+                await refreshDataAndRender();
+            } catch (error) {
+                console.error("Update item name failed:", error);
+                alert('更新物品名称失败，请重试。');
+                if(label) label.style.display = 'block';
+                input.remove();
+            }
+        } else {
+            if(label) label.style.display = 'block';
+            input.remove();
+        }
+    };
+    input.addEventListener('blur', saveChanges);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveChanges(); });
+    label.parentNode.insertBefore(input, label.nextSibling);
+    input.focus();
     return;
   }
-  const label = itemElement.querySelector('label');
-  label.style.display = 'none';
+
+  const originalDisplay = labelContainer.style.display;
+  labelContainer.style.display = 'none';
 
   const input = document.createElement('input');
   input.type = 'text';
   input.value = currentName;
-  input.className = 'font-semibold text-gray-700 w-full';
+  input.className = 'font-semibold text-gray-700 w-full p-1 border rounded';
 
   const saveChanges = async () => {
     const newName = input.value;
@@ -677,9 +718,11 @@ async function editItem(id, currentName) {
       } catch (error) {
         console.error("Update item name failed:", error);
         alert('更新物品名称失败，请重试。');
+        labelContainer.style.display = originalDisplay;
+        input.remove();
       }
     } else {
-      label.style.display = 'block';
+      labelContainer.style.display = originalDisplay;
       input.remove();
     }
   };
@@ -687,11 +730,15 @@ async function editItem(id, currentName) {
   input.addEventListener('blur', saveChanges);
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
+      e.preventDefault();
       saveChanges();
+    } else if (e.key === 'Escape') {
+      labelContainer.style.display = originalDisplay;
+      input.remove();
     }
   });
 
-  itemElement.insertBefore(input, label.nextSibling);
+  labelContainer.parentNode.insertBefore(input, labelContainer.nextSibling);
   input.focus();
 }
 
@@ -932,14 +979,19 @@ async function addProgress(event, todoId) {
 }
 
 async function editProgress(id, currentText) {
-  const progressElement = document.querySelector(`div[data-id='${id}'] .flex-grow`);
-  const label = progressElement.querySelector('label');
-  label.style.display = 'none';
+  const progressDiv = document.querySelector(`div[data-id='${id}']`);
+  if (!progressDiv) return;
+
+  const labelContainer = progressDiv.querySelector('.flex-grow > div:first-child');
+  if (!labelContainer) return;
+
+  const originalDisplay = labelContainer.style.display;
+  labelContainer.style.display = 'none';
 
   const input = document.createElement('input');
   input.type = 'text';
   input.value = currentText;
-  input.className = 'font-semibold text-gray-700 w-full';
+  input.className = 'font-semibold text-gray-700 w-full p-1 border rounded'; // Added some basic styling
 
   const saveChanges = async () => {
     const newText = input.value;
@@ -951,13 +1003,18 @@ async function editProgress(id, currentText) {
           body: JSON.stringify({ id, text: newText }),
         });
         if (!response.ok) throw new Error('更新进度失败');
+        // On success, refreshDataAndRender will rebuild the element.
         await refreshDataAndRender();
       } catch (error) {
         console.error("Update progress failed:", error);
         alert('更新进度失败，请重试。');
+        // Restore UI on failure
+        labelContainer.style.display = originalDisplay;
+        input.remove();
       }
     } else {
-      label.style.display = 'block';
+      // If no change, just restore the view
+      labelContainer.style.display = originalDisplay;
       input.remove();
     }
   };
@@ -965,11 +1022,16 @@ async function editProgress(id, currentText) {
   input.addEventListener('blur', saveChanges);
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
+      e.preventDefault(); // Prevent form submission if it's in a form
       saveChanges();
+    } else if (e.key === 'Escape') {
+      labelContainer.style.display = originalDisplay;
+      input.remove();
     }
   });
 
-  progressElement.insertBefore(input, label.nextSibling);
+  // Insert the input field right after the hidden label container
+  labelContainer.parentNode.insertBefore(input, labelContainer.nextSibling);
   input.focus();
 }
 
