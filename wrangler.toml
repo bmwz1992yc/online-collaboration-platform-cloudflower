@@ -12,5 +12,5 @@ bucket_name = "online-collaboration-platform-logs"
 
 [[kv_namespaces]]
 binding = "AUDIT_LOGS_KV"
-id = "2c8f6ea7101a4e149361661719b48999" # Placeholder - Wrangler will create a real one
-preview_id = "2c8f6ea7101a4e149361661719b48999" # Placeholder
+id = "a4affd1c3cc047b8b9047fc340f82991" # Placeholder - Wrangler will create a real one
+preview_id = "a4affd1c3cc047b8b9047fc340f82991" # Placeholder
