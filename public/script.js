@@ -103,7 +103,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           body: formData,
         });
         if (!response.ok) throw new Error('添加物品失败');
-        window.location.reload();
+        await refreshDataAndRender();
+        // Clear the form
+        e.target.reset();
       } catch (error) {
         console.error("Add item failed:", error);
         alert('添加物品失败，请重试。');
@@ -136,7 +138,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                   const errorText = await response.text();
                   throw new Error('转交失败: ' + errorText);
               }
-              window.location.reload();
+              closeTransferModal();
+              await refreshDataAndRender();
           } catch (error) {
               console.error("Transfer failed:", error);
               alert(error.message);
@@ -167,7 +170,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           body: formData,
         });
         if (!response.ok) throw new Error('添加事项失败');
-        window.location.reload();
+        await refreshDataAndRender();
+        e.target.reset();
       } catch (error) {
         console.error("Add todo failed:", error);
         alert('添加事项失败，请重试。');
@@ -189,7 +193,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           body: formData,
         });
         if (!response.ok) throw new Error('创建用户失败');
-        window.location.reload();
+        await refreshDataAndRender();
+        e.target.reset();
       } catch (error) {
         console.error("Add user failed:", error);
         alert('创建用户失败，请重试。');
@@ -203,6 +208,56 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // Helper functions (moved from backend)
+async function refreshDataAndRender() {
+  try {
+    // 1. Fetch latest data
+    const newData = await fetch('/api/data').then(res => res.json());
+    initialData = newData; // Update global data object
+    const { allTodos, recentDeletedTodos, keptItems, recentDeletedItems, shareLinks } = newData;
+
+    // 2. Re-render dynamic parts of the page
+    const allTodosList = document.getElementById('all-todos-list');
+    if (allTodosList) {
+      allTodosList.innerHTML = renderAllTodos(allTodos, keptItems, shareLinks);
+    }
+
+    const keptItemsList = document.getElementById('kept-items-list');
+    if (keptItemsList) {
+      keptItemsList.innerHTML = renderKeptItems(keptItems, shareLinks);
+    }
+
+    const deletedTodosList = document.getElementById('deleted-todos-list');
+    if (deletedTodosList) {
+      deletedTodosList.innerHTML = renderDeletedTodos(recentDeletedTodos);
+    }
+
+    const deletedItemsList = document.getElementById('deleted-items-list');
+    if (deletedItemsList) {
+      deletedItemsList.innerHTML = renderDeletedItems(recentDeletedItems);
+    }
+
+    const deletedProgressList = document.getElementById('deleted-progress-list');
+    if (deletedProgressList) {
+        deletedProgressList.innerHTML = renderDeletedProgress(initialData.recentDeletedProgress || []);
+    }
+
+    const userList = document.getElementById('user-list');
+    const userCount = document.getElementById('user-count');
+    if (userList && userCount) {
+        userList.innerHTML = renderUserList(shareLinks);
+        userCount.textContent = Object.keys(shareLinks).length;
+    }
+
+    // 3. Re-initialize icons and lightboxes
+    lucide.createIcons();
+    refreshFsLightbox();
+
+  } catch (error) {
+    console.error("Failed to refresh data and render:", error);
+    alert('数据刷新失败，请尝试手动刷新页面。');
+  }
+}
+
 function getDisplayName(userId) {
   if (userId === 'admin') return 'yc';
   return userId;
@@ -261,6 +316,30 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
           return `<li>${time}: ${actor} 将状态从 <strong>${from}</strong> 更新为 <strong>${to}</strong>。</li>`;
         case 'delete':
            return `<li>${time}: ${actor} 删除了此任务。</li>`;
+        case 'restore':
+           return `<li>${time}: ${actor} 恢复了此任务。</li>`;
+        case 'update_text':
+            return `<li>${time}: ${actor} 将任务内容从 "${logEntry.details.from}" 修改为 "${logEntry.details.to}"。</li>`;
+        case 'create_item':
+            return `<li>${time}: ${actor} 添加了物品 "${logEntry.details.name}"。</li>`;
+        case 'delete_item':
+            return `<li>${time}: ${actor} 删除了物品 "${logEntry.details.name}"。</li>`;
+        case 'update_item_name':
+            return `<li>${time}: ${actor} 将物品名称从 "${logEntry.details.from}" 修改为 "${logEntry.details.to}"。</li>`;
+        case 'transfer_item':
+            return `<li>${time}: ${actor} 将物品 "${logEntry.details.name}" 转交给了 <strong>${logEntry.details.to}</strong>。</li>`;
+        case 'return_item':
+            return `<li>${time}: ${actor} 归还了物品 "${logEntry.details.name}"。</li>`;
+        case 'add_progress':
+            return `<li>${time}: ${actor} 添加了新进度: "${logEntry.details.text}"。</li>`;
+        case 'update_progress':
+            return `<li>${time}: ${actor} 将进度从 "${logEntry.details.from}" 修改为 "${logEntry.details.to}"。</li>`;
+        case 'delete_progress':
+            return `<li>${time}: ${actor} 删除了进度: "${logEntry.details.text}"。</li>`;
+        case 'restore_item':
+            return `<li>${time}: ${actor} 恢复了物品 "${logEntry.details.name}"。</li>`;
+        case 'restore_progress':
+            return `<li>${time}: ${actor} 恢复了进度: "${logEntry.details.text}"。</li>`;
         default:
           return `<li>${time}: 未知操作。</li>`;
       }
@@ -345,7 +424,7 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
     return `
     <li data-id="${todo.id}" data-owner="${todo.ownerId}" class="p-4 bg-white rounded-lg shadow-sm ${todo.completed ? 'completed' : ''}">
       <div class="flex items-center">
-        <button onclick="toggleTodoDetails('${todo.id}')" class="mr-4"><i data-lucide="chevron-down"></i></button>
+        <button onclick="toggleTodoDetails(this, '${todo.id}')" class="mr-4"><i data-lucide="chevron-down"></i></button>
         <input type="checkbox" id="todo-${todo.id}" ${todo.completed ? 'checked' : ''} onchange="toggleTodo('${todo.id}', this.checked, '${todo.ownerId}')" class="mr-4 w-6 h-6 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500">
         ${imageUrlHtml}
         <div class="flex-grow">
@@ -535,7 +614,7 @@ async function editTodo(id, ownerId, currentText) {
           body: JSON.stringify({ id, ownerId, text: newText }),
         });
         if (!response.ok) throw new Error('更新待办事项失败');
-        window.location.reload();
+        await refreshDataAndRender();
       } catch (error) {
         console.error("Update todo text failed:", error);
         alert('更新待办事项失败，请重试。');
@@ -558,7 +637,13 @@ async function editTodo(id, ownerId, currentText) {
 }
 
 async function editItem(id, currentName) {
-  const itemElement = document.querySelector(`div[data-id='${id}'] .flex-grow`);
+  // Use a more generic selector to find the item element, whether it's in a div or li
+  const itemElement = document.querySelector(`[data-id='${id}'] .flex-grow`);
+  if (!itemElement) {
+    console.error("Could not find item element with id:", id);
+    alert('无法找到要编辑的物品，请刷新页面后重试。');
+    return;
+  }
   const label = itemElement.querySelector('label');
   label.style.display = 'none';
 
@@ -577,7 +662,7 @@ async function editItem(id, currentName) {
           body: JSON.stringify({ id, name: newName }),
         });
         if (!response.ok) throw new Error('更新物品名称失败');
-        window.location.reload();
+        await refreshDataAndRender();
       } catch (error) {
         console.error("Update item name failed:", error);
         alert('更新物品名称失败，请重试。');
@@ -607,7 +692,7 @@ async function toggleTodo(id, completed, ownerId) {
       body: JSON.stringify({ id, completed, ownerId }),
     });
     if (!response.ok) throw new Error('更新待办事项失败');
-    window.location.reload();
+    await refreshDataAndRender();
   } catch (error) {
     console.error("Update todo failed:", error);
     alert('更新待办事项失败，请重试。');
@@ -623,7 +708,7 @@ async function deleteTodo(id, ownerId) {
       body: JSON.stringify({ id, ownerId }),
     });
     if (!response.ok) throw new Error('删除事项失败');
-    window.location.reload();
+    await refreshDataAndRender();
   } catch (error) {
     console.error("Delete todo failed:", error);
     alert('删除事项失败，请重试。');
@@ -639,7 +724,7 @@ async function deleteUser(token) {
       body: JSON.stringify({ token }),
     });
     if (!response.ok) throw new Error('删除用户失败');
-    window.location.reload();
+    await refreshDataAndRender();
   } catch (error) {
     console.error("Delete user failed:", error);
     alert('删除用户失败，请重试。');
@@ -655,7 +740,7 @@ async function deleteItem(id) {
       body: JSON.stringify({ id }),
     });
     if (!response.ok) throw new Error('删除物品失败');
-    window.location.reload();
+    await refreshDataAndRender();
   } catch (error) {
     console.error("Delete item failed:", error);
     alert('删除物品失败，请重试。');
@@ -671,7 +756,7 @@ async function returnItem(id) {
       body: JSON.stringify({ id }),
     });
     if (!response.ok) throw new Error('归还物品失败');
-    window.location.reload();
+    await refreshDataAndRender();
   } catch (error) {
     console.error("Return item failed:", error);
     alert('归还物品失败，请重试。');
@@ -687,8 +772,9 @@ async function restoreTodo(id) {
       body: JSON.stringify({ id }),
     });
     if (!response.ok) throw new Error('还原失败');
-    window.location.reload();
-  } catch (error) {
+    await refreshDataAndRender();
+  } catch (error)
+  {
     console.error("Restore failed:", error);
     alert('还原失败，请重试。');
   }
@@ -703,7 +789,7 @@ async function restoreItem(id) {
       body: JSON.stringify({ id }),
     });
     if (!response.ok) throw new Error('还原物品失败');
-    window.location.reload();
+    await refreshDataAndRender();
   } catch (error) {
     console.error("Restore item failed:", error);
     alert('还原物品失败，请重试。');
@@ -736,14 +822,29 @@ function closeTransferModal() {
     modal.style.display = 'none';
 }
 
-function toggleKeptItems() {
+function toggleKeptItems(button) {
   const list = document.getElementById('kept-items-list');
-  list.classList.toggle('hidden');
+  const isHidden = list.classList.toggle('hidden');
+  const icon = button.querySelector('i');
+
+  if (isHidden) {
+    icon.outerHTML = '<i data-lucide="chevron-down" class="w-4 h-4"></i>';
+  } else {
+    icon.outerHTML = '<i data-lucide="chevron-up" class="w-4 h-4"></i>';
+  }
+  lucide.createIcons();
 }
 
-function toggleTodoDetails(todoId) {
+function toggleTodoDetails(button, todoId) {
   const details = document.getElementById(`todo-details-${todoId}`);
-  details.classList.toggle('hidden');
+  const isHidden = details.classList.toggle('hidden');
+
+  if (isHidden) {
+    button.innerHTML = '<i data-lucide="chevron-down"></i>';
+  } else {
+    button.innerHTML = '<i data-lucide="chevron-up"></i>';
+  }
+  lucide.createIcons();
 }
 
 function showAddProgressForm(todoId) {
@@ -792,7 +893,9 @@ async function addProgress(event, todoId) {
       body: formData,
     });
     if (!response.ok) throw new Error('添加进度失败');
-    window.location.reload();
+    await refreshDataAndRender();
+    form.reset();
+    showAddProgressForm(todoId); // Hide the form again
   } catch (error) {
     console.error("Add progress failed:", error);
     alert('添加进度失败，请重试。');
@@ -819,7 +922,7 @@ async function editProgress(id, currentText) {
           body: JSON.stringify({ id, text: newText }),
         });
         if (!response.ok) throw new Error('更新进度失败');
-        window.location.reload();
+        await refreshDataAndRender();
       } catch (error) {
         console.error("Update progress failed:", error);
         alert('更新进度失败，请重试。');
@@ -850,7 +953,7 @@ async function deleteProgress(id) {
       body: JSON.stringify({ id }),
     });
     if (!response.ok) throw new Error('删除进度失败');
-    window.location.reload();
+    await refreshDataAndRender();
   } catch (error) {
     console.error("Delete progress failed:", error);
     alert('删除进度失败，请重试。');
@@ -886,7 +989,7 @@ async function restoreProgress(id) {
       body: JSON.stringify({ id }),
     });
     if (!response.ok) throw new Error('还原进度失败');
-    window.location.reload();
+    await refreshDataAndRender();
   } catch (error) {
     console.error("Restore progress failed:", error);
     alert('还原进度失败，请重试。');
