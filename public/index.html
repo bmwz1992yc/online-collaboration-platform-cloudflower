@@ -50,7 +50,7 @@
           <input type="hidden" name="creatorId" value="admin" />
           <input type="text" name="text" placeholder="输入新的待办事项..." required
                  class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-300" />
-          <input type="file" name="image" accept="image/*"
+          <input type="file" name="attachment"
                  class="w-full text-sm border rounded-lg p-1" />
           <div class="p-3 bg-gray-50 border rounded-lg">
             <h3 class="text-sm font-semibold mb-1 text-gray-700">指派给 (可多选)</h3>
@@ -90,10 +90,10 @@
               <!-- 用户选项将在这里动态插入 -->
             </div>
           </div>
-          <input type="file" id="item-image" name="image" accept="image/*"
+          <input type="file" id="item-attachment" name="attachment"
                  class="w-full text-sm border rounded-lg p-1" />
           <select id="item-todo-id" class="w-full p-2 border rounded-lg text-sm">
-            <option value="">选择关联待办事项 (可选)</option>
+            <option value="">选择关联待-事项 (可选)</option>
             <!-- 待办事项选项将在这里动态插入 -->
           </select>
           <button type="submit"

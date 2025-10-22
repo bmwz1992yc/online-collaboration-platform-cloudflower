@@ -283,21 +283,29 @@ async function handleAddProgress(request, env) {
   const formData = await request.formData();
   const todoId = formData.get('todoId');
   const text = formData.get('text');
-  const imageFiles = formData.getAll('images');
+  const attachmentFiles = formData.getAll('attachments');
 
   if (!todoId || !text) {
     return new Response('Missing "todoId" or "text" in form data', { status: 400 });
   }
 
-  let imageUrls = [];
-  for (const imageFile of imageFiles) {
-    if (imageFile && imageFile.size > 0) {
-      const compressedImage = await compressImage(imageFile);
-      const imageId = crypto.randomUUID();
-      const extension = imageFile.name.split('.').pop();
-      const imageKey = `images/${imageId}.${extension}`;
-      await env.R2_BUCKET.put(imageKey, compressedImage, { httpMetadata: { contentType: imageFile.type } });
-      imageUrls.push(`/api/${imageKey}`);
+  let attachmentUrls = [];
+  for (const attachmentFile of attachmentFiles) {
+    if (attachmentFile && attachmentFile.size > 0) {
+      const attachmentId = crypto.randomUUID();
+      const extension = attachmentFile.name.split('.').pop();
+      const attachmentKey = `attachments/${attachmentId}.${extension}`;
+      await env.R2_BUCKET.put(attachmentKey, attachmentFile.stream(), {
+        httpMetadata: {
+          contentType: attachmentFile.type,
+          contentDisposition: `attachment; filename="${encodeURIComponent(attachmentFile.name)}"`
+        }
+      });
+      attachmentUrls.push({
+        url: `/api/${attachmentKey}`,
+        name: attachmentFile.name,
+        type: attachmentFile.type
+      });
     }
   }
 
@@ -306,7 +314,7 @@ async function handleAddProgress(request, env) {
     text: text,
     createdAt: new Date().toISOString(),
     creatorId: creatorId,
-    imageUrls: imageUrls
+    attachmentUrls: attachmentUrls
   };
 
   const allTodos = await getAllUsersTodos(env);
@@ -490,7 +498,7 @@ async function handleAddTodo(request, env) {
 
   const formData = await request.formData();
   const text = formData.get('text');
-  const imageFile = formData.get('image');
+  const attachmentFile = formData.get('attachment');
   let ownerIds = formData.getAll('userIds');
 
   if (!text) {
@@ -501,14 +509,22 @@ async function handleAddTodo(request, env) {
     ownerIds.push('public');
   }
 
-  let imageUrl = null;
-  if (imageFile && imageFile.size > 0) {
-    const compressedImage = await compressImage(imageFile);
-    const imageId = crypto.randomUUID();
-    const extension = imageFile.name.split('.').pop();
-    const imageKey = `images/${imageId}.${extension}`;
-    await env.R2_BUCKET.put(imageKey, compressedImage, { httpMetadata: { contentType: imageFile.type } });
-    imageUrl = `/api/${imageKey}`; // Store relative path for API
+  let attachmentUrl = null;
+  if (attachmentFile && attachmentFile.size > 0) {
+    const attachmentId = crypto.randomUUID();
+    const extension = attachmentFile.name.split('.').pop();
+    const attachmentKey = `attachments/${attachmentId}.${extension}`;
+    await env.R2_BUCKET.put(attachmentKey, attachmentFile.stream(), {
+        httpMetadata: {
+          contentType: attachmentFile.type,
+          contentDisposition: `attachment; filename="${encodeURIComponent(attachmentFile.name)}"`
+        }
+      });
+    attachmentUrl = {
+      url: `/api/${attachmentKey}`,
+      name: attachmentFile.name,
+      type: attachmentFile.type
+    };
   }
 
   const newTodo = {
@@ -517,7 +533,7 @@ async function handleAddTodo(request, env) {
     completed: false,
     createdAt: new Date().toISOString(),
     creatorId: creatorId,
-    imageUrl: imageUrl,
+    attachmentUrl: attachmentUrl,
     activityLog: [{
       timestamp: new Date().toISOString(),
       actorId: creatorId,
@@ -680,7 +696,7 @@ async function handleAddItem(request, env) {
   const formData = await request.formData();
   const name = formData.get('name');
   const keepers = formData.getAll('keepers');
-  const imageFile = formData.get('image');
+  const attachmentFile = formData.get('attachment');
   const todoId = formData.get('todoId');
 
   if (!name || keepers.length === 0) {
@@ -696,21 +712,29 @@ async function handleAddItem(request, env) {
       }
   }
 
-  let imageUrl = null;
-  if (imageFile && imageFile.size > 0) {
-    const compressedImage = await compressImage(imageFile);
-    const imageId = crypto.randomUUID();
-    const extension = imageFile.name.split('.').pop();
-    const imageKey = `images/${imageId}.${extension}`;
-    await env.R2_BUCKET.put(imageKey, compressedImage, { httpMetadata: { contentType: imageFile.type } });
-    imageUrl = `/api/${imageKey}`;
+  let attachmentUrl = null;
+  if (attachmentFile && attachmentFile.size > 0) {
+    const attachmentId = crypto.randomUUID();
+    const extension = attachmentFile.name.split('.').pop();
+    const attachmentKey = `attachments/${attachmentId}.${extension}`;
+    await env.R2_BUCKET.put(attachmentKey, attachmentFile.stream(), {
+        httpMetadata: {
+          contentType: attachmentFile.type,
+          contentDisposition: `attachment; filename="${encodeURIComponent(attachmentFile.name)}"`
+        }
+      });
+    attachmentUrl = {
+      url: `/api/${attachmentKey}`,
+      name: attachmentFile.name,
+      type: attachmentFile.type
+    };
   }
 
   const newItem = {
     id: crypto.randomUUID(),
     name: name,
     todoId: todoId || null,
-    imageUrl: imageUrl,
+    attachmentUrl: attachmentUrl,
     createdAt: new Date().toISOString(),
     keepers: [{
         userIds: keepers,
@@ -1006,10 +1030,10 @@ export async function onRequest(context) {
     return new Response('Internal Server Error: R2_BUCKET binding is missing or env object is undefined.', { status: 500 });
   }
 
-  // Handle image requests
-  if (path.startsWith('/images/')) {
-    const imageKey = path.substring(1); // Remove leading slash
-    const r2Object = await env.R2_BUCKET.get(imageKey);
+  // Handle image and attachment requests for backward compatibility
+  if (path.startsWith('/images/') || path.startsWith('/attachments/')) {
+    const objectKey = path.substring(1); // Remove leading slash
+    const r2Object = await env.R2_BUCKET.get(objectKey);
 
     if (r2Object === null) {
       return new Response('Not Found', { status: 404 });
