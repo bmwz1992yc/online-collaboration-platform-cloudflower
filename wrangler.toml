@@ -5,3 +5,12 @@ pages_build_output_dir = "./public"
 [[r2_buckets]]
 binding = "R2_BUCKET"
 bucket_name = "online-collaboration-platform"
+
+[[r2_buckets]]
+binding = "AUDIT_LOGS_BUCKET"
+bucket_name = "online-collaboration-platform-logs"
+
+[[kv_namespaces]]
+binding = "AUDIT_LOGS_KV"
+id = "2c8f6ea7101a4e149361661719b48999" # Placeholder - Wrangler will create a real one
+preview_id = "2c8f6ea7101a4e149361661719b48999" # Placeholder

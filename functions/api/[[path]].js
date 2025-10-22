@@ -1,3 +1,55 @@
+// --- 审计日志核心功能 ---
+
+/**
+ * 记录一个不可变的操作日志。
+ * @param {object} env - Worker 的环境对象，包含 R2 和 KV 绑定。
+ * @param {string} actorId - 执行操作的用户 ID。
+ * @param {string} action - 操作的类型 (例如, 'add_todo', 'delete_item')。
+ * @param {object} data - 与操作相关的数据。
+ */
+async function logAction(env, actorId, action, data) {
+  // 1. 获取最新的哈希值以链接日志
+  const latestHash = await env.AUDIT_LOGS_KV.get('LATEST_HASH') || 'GENESIS';
+
+  // 2. 创建新的日志条目
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    actorId,
+    action,
+    data,
+    previousHash: latestHash,
+  };
+
+  // 3. 计算新日志条目的哈希值
+  const logEntryString = JSON.stringify(logEntry);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(logEntryString));
+  const currentHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+  // 4. 将日志条目存储在 R2 中，以其哈希值为键
+  await env.AUDIT_LOGS_BUCKET.put(currentHash, logEntryString);
+
+  // 5. 更新 KV 中的最新哈希值
+  await env.AUDIT_LOGS_KV.put('LATEST_HASH', currentHash);
+}
+/**
+ * 从请求中提取操作者的 ID。
+ * @param {Request} request - 收到的请求对象。
+ * @param {object} env - Worker 的环境对象。
+ * @returns {Promise<string>} - 操作者的用户 ID。
+ */
+async function getActorIdFromRequest(request, env) {
+  const referer = request.headers.get('Referer');
+  if (referer) {
+    const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
+    const shareLinks = await loadShareLinks(env);
+    if (shareLinks[refererPath]) {
+      return shareLinks[refererPath].username;
+    }
+  }
+  return 'admin';
+}
+
+
 // ⚠️ 重要提示：此 Worker 需要绑定一个名为 R2_BUCKET 的 R2 存储桶。
 // 如果未绑定 R2 存储桶，Worker 将无法正常工作。
 
@@ -120,6 +172,8 @@ async function handleUpdateProgress(request, env) {
   }
 
   if (progressFound) {
+    // 审计日志
+    await logAction(env, actorId, 'update_progress', { progressId: id, newText: text });
     return new Response(JSON.stringify({ success: true }), { status: 200 });
   } else {
     return new Response(JSON.stringify({ error: "Progress not found" }), { status: 404 });
@@ -175,6 +229,8 @@ async function handleDeleteProgress(request, env) {
   }
 
   if (progressFound) {
+    // 审计日志 - 注意：在找到并删除后记录
+    // await logAction(env, deleterId, 'delete_progress', { progressId: id });
     return new Response(JSON.stringify({ success: true }), { status: 200 });
   } else {
     return new Response(JSON.stringify({ error: "Progress not found" }), { status: 404 });
@@ -227,6 +283,10 @@ async function handleRestoreProgress(request, env) {
     if (todoFound) {
       await saveDeletedProgress(env, deletedProgressList);
       await addTodoActivityLog(env, todoId, actorId, 'restore_progress', { progressId: id, text: restoredProgress.text });
+
+      // 审计日志
+      await logAction(env, actorId, 'restore_progress', { progressId: id, text: restoredProgress.text });
+
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     } else {
       return new Response(JSON.stringify({ error: "Todo not found for progress item" }), { status: 404 });
@@ -337,6 +397,10 @@ async function handleAddProgress(request, env) {
 
   if (todoFound) {
     await addTodoActivityLog(env, todoId, creatorId, 'add_progress', { progressId: newProgress.id, text: newProgress.text });
+
+    // 审计日志
+    await logAction(env, creatorId, 'add_progress', { todoId, progressId: newProgress.id, text });
+
     return new Response(JSON.stringify({ success: true, progress: newProgress }), { status: 200, headers: { 'Content-Type': 'application/json;charset=UTF-8' } });
   } else {
     return new Response(JSON.stringify({ error: "Todo not found" }), { status: 404 });
@@ -549,6 +613,9 @@ async function handleAddTodo(request, env) {
     await saveTodos(env, kvKey, todos);
   }
 
+  // 审计日志
+  await logAction(env, creatorId, 'add_todo', { todoId: newTodo.id, text, ownerIds });
+
   return new Response(JSON.stringify({ success: true, todo: newTodo }), { status: 200, headers: { 'Content-Type': 'application/json;charset=UTF-8' } });
 }
 
@@ -596,6 +663,10 @@ async function handleUpdateTodo(request, env) {
     } 
 
     await saveTodos(env, kvKey, todos);
+
+    // 审计日志
+    await logAction(env, completerId, 'update_todo_status', { todoId: id, ownerId, completed });
+
     return new Response(JSON.stringify({ success: true }), { status: 200 });
   } else {
     return new Response(JSON.stringify({ error: "Todo not found" }), { status: 404 });
@@ -648,6 +719,9 @@ async function handleDeleteTodo(request, env) {
     deletedTodos.push(deletedTodo);
     await saveDeletedTodos(env, deletedTodos);
 
+    // 审计日志
+    await logAction(env, deleterId, 'delete_todo', { todoId: id, ownerId });
+
     return new Response(JSON.stringify({ success: true }), { status: 200 });
   } else {
     return new Response(JSON.stringify({ error: "Todo not found" }), { status: 404 });
@@ -670,6 +744,11 @@ async function handleCreateUser(request, env) {
     };
     
     await saveShareLinks(env, shareLinks);
+
+    // 审计日志
+    const actorId = await getActorIdFromRequest(request, env);
+    await logAction(env, actorId, 'create_user', { username, token: newToken });
+
     return new Response(JSON.stringify({ success: true, token: newToken, username: username }), { status: 200, headers: { 'Content-Type': 'application/json;charset=UTF-8' } });
 }
 
@@ -681,8 +760,14 @@ async function handleDeleteUser(request, env) {
 
     const shareLinks = await loadShareLinks(env);
     if (shareLinks[token]) {
+        const username = shareLinks[token].username;
         delete shareLinks[token];
         await saveShareLinks(env, shareLinks);
+
+        // 审计日志
+        const actorId = await getActorIdFromRequest(request, env);
+        await logAction(env, actorId, 'delete_user', { username, token });
+
         return new Response(JSON.stringify({ success: true }), { status: 200 });
     } else {
         return new Response(JSON.stringify({ error: "User token not found" }), { status: 404 });
@@ -749,6 +834,9 @@ async function handleAddItem(request, env) {
 
   await addTodoActivityLog(env, todoId, creatorId, 'create_item', { itemId: newItem.id, name: newItem.name });
 
+  // 审计日志
+  await logAction(env, creatorId, 'add_item', { itemId: newItem.id, name, keepers });
+
   return new Response(JSON.stringify({ success: true, item: newItem }), { status: 200, headers: { 'Content-Type': 'application/json;charset=UTF-8' } });
 }
 
@@ -787,6 +875,9 @@ async function handleDeleteItem(request, env) {
     await saveDeletedItems(env, deletedItems);
 
     await addTodoActivityLog(env, itemToDelete.todoId, deleterId, 'delete_item', { itemId: id, name: itemToDelete.name });
+
+    // 审计日志
+    await logAction(env, deleterId, 'delete_item', { itemId: id, name: itemToDelete.name });
 
     return new Response(JSON.stringify({ success: true }), { status: 200 });
   } else {
@@ -853,6 +944,9 @@ async function handleTransferItem(request, env) {
     to: newKeepers.map(getDisplayName).join(', ')
   });
 
+  // 审计日志
+  await logAction(env, transferrerId, 'transfer_item', { itemId, name: item.name, newKeepers });
+
   return new Response(JSON.stringify({ success: true }), { status: 200 });
 }
 
@@ -887,6 +981,9 @@ async function handleReturnItem(request, env) {
   await saveKeptItems(env, keptItems);
 
   await addTodoActivityLog(env, item.todoId, returnerId, 'return_item', { itemId: id, name: item.name });
+
+  // 审计日志
+  await logAction(env, returnerId, 'return_item', { itemId: id, name: item.name });
 
   return new Response(JSON.stringify({ success: true }), { status: 200 });
 }
@@ -933,6 +1030,9 @@ async function handleRestoreTodo(request, env) {
     await saveDeletedTodos(env, deletedTodos);
     await saveTodos(env, kvKey, todos);
 
+    // 审计日志
+    await logAction(env, restorerId, 'restore_todo', { todoId: id });
+
     return new Response(JSON.stringify({ success: true }), { status: 200 });
   } else {
     return new Response(JSON.stringify({ error: "Deleted todo not found" }), { status: 404 });
@@ -971,6 +1071,9 @@ async function handleRestoreItem(request, env) {
     await saveKeptItems(env, keptItems);
 
     await addTodoActivityLog(env, restoredItem.todoId, actorId, 'restore_item', { itemId: id, name: restoredItem.name });
+
+    // 审计日志
+    await logAction(env, actorId, 'restore_item', { itemId: id, name: restoredItem.name });
 
     return new Response(JSON.stringify({ success: true }), { status: 200 });
   } else {
@@ -1024,10 +1127,15 @@ export async function onRequest(context) {
   const path = `/${params.path.join('/')}`;
   console.log('Request path:', path); // Add this line for debugging
 
-  // Check for R2_BUCKET binding
-  if (!env || !env.R2_BUCKET) {
-    console.error('R2_BUCKET binding is missing or env object is undefined. Please ensure your wrangler.toml or Cloudflare Worker settings include an R2 bucket binding named R2_BUCKET.');
-    return new Response('Internal Server Error: R2_BUCKET binding is missing or env object is undefined.', { status: 500 });
+  // Check for R2_BUCKET and audit log bindings
+  if (!env || !env.R2_BUCKET || !env.AUDIT_LOGS_BUCKET || !env.AUDIT_LOGS_KV) {
+    const missing = [
+      !env.R2_BUCKET && "R2_BUCKET",
+      !env.AUDIT_LOGS_BUCKET && "AUDIT_LOGS_BUCKET",
+      !env.AUDIT_LOGS_KV && "AUDIT_LOGS_KV"
+    ].filter(Boolean).join(', ');
+    console.error(`${missing} binding(s) are missing. Please check your wrangler.toml or Cloudflare Worker settings.`);
+    return new Response(`Internal Server Error: ${missing} binding(s) are missing.`, { status: 500 });
   }
 
   // Handle image and attachment requests for backward compatibility
@@ -1086,7 +1194,52 @@ export async function onRequest(context) {
       return handleDeleteProgress(request, env);
     case '/restore_progress':
       return handleRestoreProgress(request, env);
+    case '/audit-log/verify':
+      return handleVerifyAuditLog(request, env);
     default:
       return new Response('API Not Found', { status: 404 });
   }
+}
+
+async function handleVerifyAuditLog(request, env) {
+  let currentHash = await env.AUDIT_LOGS_KV.get('LATEST_HASH');
+  if (!currentHash) {
+    return new Response(JSON.stringify({ verified: true, logCount: 0, message: 'No logs found.' }), {
+      headers: { 'Content-Type': 'application/json;charset=UTF-8' },
+    });
+  }
+
+  let logCount = 0;
+  let valid = true;
+  let message = '';
+
+  while (currentHash && currentHash !== 'GENESIS') {
+    const logEntryString = await env.AUDIT_LOGS_BUCKET.get(currentHash);
+    if (!logEntryString) {
+      valid = false;
+      message = `Verification failed: Log entry for hash ${currentHash} not found.`;
+      break;
+    }
+
+    const storedLogEntry = await logEntryString.json();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(await logEntryString.text()));
+    const calculatedHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    if (calculatedHash !== currentHash) {
+      valid = false;
+      message = `Verification failed: Hash mismatch for log entry ${currentHash}.`;
+      break;
+    }
+
+    logCount++;
+    currentHash = storedLogEntry.previousHash;
+  }
+
+  if (valid) {
+    message = `Successfully verified ${logCount} log entries. The chain is intact.`;
+  }
+
+  return new Response(JSON.stringify({ verified: valid, logCount, message }), {
+    headers: { 'Content-Type': 'application/json;charset=UTF-8' },
+  });
 }
