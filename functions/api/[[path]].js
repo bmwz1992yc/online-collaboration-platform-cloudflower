@@ -1193,10 +1193,14 @@ export async function onRequest(context) {
   const path = `/${params.path.join('/')}`;
   console.log('Request path:', path); // Add this line for debugging
 
-  // Check for R2_BUCKET binding
+  // Check for R2 bucket bindings
   if (!env || !env.R2_BUCKET) {
-    console.error('R2_BUCKET binding is missing or env object is undefined. Please ensure your wrangler.toml or Cloudflare Worker settings include an R2 bucket binding named R2_BUCKET.');
-    return new Response('Internal Server Error: R2_BUCKET binding is missing or env object is undefined.', { status: 500 });
+    console.error('R2_BUCKET binding is missing. Please ensure your wrangler.toml includes an R2 bucket binding named R2_BUCKET.');
+    return new Response('Internal Server Error: R2_BUCKET binding is missing.', { status: 500 });
+  }
+  if (!env.BLOCKS_BUCKET) {
+    console.error('BLOCKS_BUCKET binding is missing. Please ensure your wrangler.toml includes an R2 bucket binding named BLOCKS_BUCKET.');
+    return new Response('Internal Server Error: BLOCKS_BUCKET binding is missing.', { status: 500 });
   }
 
   // Handle image and attachment requests for backward compatibility
