@@ -908,7 +908,6 @@ async function addProgress(event, todoId) {
     if (!response.ok) throw new Error('添加进度失败');
     await refreshDataAndRender();
     form.reset();
-    showAddProgressForm(todoId); // Hide the form again
   } catch (error) {
     console.error("Add progress failed:", error);
     alert('添加进度失败，请重试。');
