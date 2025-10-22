@@ -438,6 +438,9 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
           <button class="edit-btn bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg text-sm" onclick="editTodo('${todo.id}', '${todo.ownerId}', \`${todo.text}\`)">
             修改
           </button>
+          <button class="export-btn bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg text-sm" onclick="exportTodoAsHtml('${todo.id}')">
+            导出
+          </button>
           <button class="delete-btn bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg text-sm" onclick="deleteTodo('${todo.id}', '${todo.ownerId}')">
             删除
           </button>
@@ -1006,4 +1009,137 @@ async function restoreProgress(id) {
     console.error("Restore progress failed:", error);
     alert('还原进度失败，请重试。');
   }
+}
+
+async function imageUrlToDataUri(url) {
+  if (!url) return null;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.warn(`Failed to fetch image for data URI conversion: ${url}, status: ${response.status}`);
+      return null;
+    }
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = (err) => {
+        console.error(`FileReader error for URL ${url}:`, err);
+        reject(err);
+      };
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.error(`Error converting image to data URI for URL ${url}:`, error);
+    return null;
+  }
+}
+
+async function exportTodoAsHtml(todoId) {
+  const todo = initialData.allTodos.find(t => t.id === todoId);
+  if (!todo) {
+    alert('找不到要导出的事项。');
+    return;
+  }
+
+  const associatedItems = initialData.keptItems.filter(item => item.todoId === todo.id && !item.deletedAt);
+
+  let todoImageHtml = '';
+  if (todo.imageUrl) {
+    const dataUri = await imageUrlToDataUri(todo.imageUrl);
+    if (dataUri) {
+      todoImageHtml = `<div class="image-attachment"><img src="${dataUri}" alt="Todo Image"></div>`;
+    }
+  }
+
+  let progressHtml = '';
+  if (todo.progress && todo.progress.length > 0) {
+    for (const p of todo.progress) {
+      let progressImagesHtml = '';
+      if (p.imageUrls && p.imageUrls.length > 0) {
+        for (const url of p.imageUrls) {
+          const dataUri = await imageUrlToDataUri(url);
+          if (dataUri) {
+            progressImagesHtml += `<div class="image-attachment"><img src="${dataUri}" alt="Progress Image"></div>`;
+          }
+        }
+      }
+      progressHtml += `
+        <div class="progress-item">
+          <p><strong>[进度] ${p.text}</strong></p>
+          <p class="meta">由 ${getDisplayName(p.creatorId)} 在 ${formatDate(p.createdAt)} 添加</p>
+          ${progressImagesHtml}
+        </div>
+      `;
+    }
+  }
+
+  let itemsHtml = '';
+  if (associatedItems.length > 0) {
+    for (const item of associatedItems) {
+      const keepersDisplay = item.keepers[item.keepers.length - 1].userIds.map(getDisplayName).join(', ');
+      let itemImageHtml = '';
+      if (item.imageUrl) {
+        const dataUri = await imageUrlToDataUri(item.imageUrl);
+        if (dataUri) {
+          itemImageHtml = `<div class="image-attachment"><img src="${dataUri}" alt="Item Image"></div>`;
+        }
+      }
+      itemsHtml += `
+        <div class="kept-item">
+          <p><strong>[物品] ${item.name}</strong></p>
+          <p class="meta">当前保管人: ${keepersDisplay}</p>
+          ${itemImageHtml}
+        </div>
+      `;
+    }
+  }
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="zh">
+    <head>
+      <meta charset="UTF-8">
+      <title>事项导出: ${todo.text}</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+        h1, h2 { border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .meta { font-size: 0.9em; color: #666; }
+        .completed { text-decoration: line-through; color: #999; }
+        .section { margin-top: 30px; }
+        .progress-item, .kept-item { border-left: 3px solid #007bff; padding-left: 15px; margin-bottom: 20px; }
+        .kept-item { border-left-color: #6f42c1; }
+        .image-attachment { margin-top: 10px; }
+        img { max-width: 100%; height: auto; border-radius: 4px; border: 1px solid #ccc; }
+      </style>
+    </head>
+    <body>
+      <h1>事项: <span class="${todo.completed ? 'completed' : ''}">${todo.text}</span></h1>
+      <p class="meta">由 ${getDisplayName(todo.creatorId)} 在 ${formatDate(todo.createdAt)} 创建</p>
+      ${todo.completed ? `<p class="meta">由 ${getDisplayName(todo.completedBy)} 在 ${formatDate(todo.completedAt)} 完成</p>` : ''}
+      ${todoImageHtml}
+
+      <div class="section">
+        <h2>进度更新</h2>
+        ${progressHtml || '<p>无进度更新。</p>'}
+      </div>
+
+      <div class="section">
+        <h2>关联物品</h2>
+        ${itemsHtml || '<p>无关联物品。</p>'}
+      </div>
+    </body>
+    </html>
+  `;
+
+  const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  const safeFilename = todo.text.replace(/[\\/\\?%\\*:\\|"<>]/g, '_').substring(0, 50);
+  const creationDate = new Date(todo.createdAt).toISOString().split('T')[0];
+  link.download = `${safeFilename}_${creationDate}.html`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
 }
