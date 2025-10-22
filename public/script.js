@@ -424,7 +424,7 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
     return `
     <li data-id="${todo.id}" data-owner="${todo.ownerId}" class="p-4 bg-white rounded-lg shadow-sm ${todo.completed ? 'completed' : ''}">
       <div class="flex items-center">
-        <button onclick="toggleTodoDetails(this, '${todo.id}')" class="mr-4"><i data-lucide="chevron-down"></i></button>
+        <button onclick="toggleTodoDetails(this, '${todo.id}')" class="mr-4"><i data-lucide="chevron-right"></i></button>
         <input type="checkbox" id="todo-${todo.id}" ${todo.completed ? 'checked' : ''} onchange="toggleTodo('${todo.id}', this.checked, '${todo.ownerId}')" class="mr-4 w-6 h-6 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500">
         ${imageUrlHtml}
         <div class="flex-grow">
@@ -840,15 +840,28 @@ function toggleTodoDetails(button, todoId) {
   const isHidden = details.classList.toggle('hidden');
 
   if (isHidden) {
-    button.innerHTML = '<i data-lucide="chevron-down"></i>';
+    button.innerHTML = '<i data-lucide="chevron-right"></i>';
   } else {
-    button.innerHTML = '<i data-lucide="chevron-up"></i>';
+    button.innerHTML = '<i data-lucide="chevron-down"></i>';
   }
   lucide.createIcons();
 }
 
 function showAddProgressForm(todoId) {
+  const details = document.getElementById(`todo-details-${todoId}`);
   const form = document.getElementById(`progress-form-${todoId}`);
+
+  // If the details section is collapsed, expand it first.
+  if (details.classList.contains('hidden')) {
+    const todoElement = document.querySelector(`li[data-id='${todoId}']`);
+    const toggleButton = todoElement.querySelector('button'); // The first button is the toggle button.
+
+    details.classList.remove('hidden');
+    toggleButton.innerHTML = '<i data-lucide="chevron-down"></i>';
+    lucide.createIcons();
+  }
+
+  // Then, always toggle the form's visibility.
   form.classList.toggle('hidden');
 }
 
