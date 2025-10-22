@@ -428,20 +428,20 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
         <input type="checkbox" id="todo-${todo.id}" ${todo.completed ? 'checked' : ''} onchange="toggleTodo('${todo.id}', this.checked, '${todo.ownerId}')" class="mr-4 w-6 h-6 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500">
         ${imageUrlHtml}
         <div class="flex-grow">
-          <label class="text-2xl font-medium text-gray-800">${todo.text}</label>
+          <label class="text-lg font-medium text-gray-800">${todo.text}</label>
           <div class="meta-info text-sm text-gray-500">由 <strong>${creatorDisplayName}</strong> 在 ${formatDate(todo.createdAt)} 创建${ownerInfo}${completionInfo}</div>
         </div>
         <div class="flex items-center space-x-2 ml-auto">
-          <button class="add-progress-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg text-sm" onclick="showAddProgressForm('${todo.id}')">
+          <button class="add-progress-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-1.5 px-3 rounded-lg text-sm" onclick="showAddProgressForm('${todo.id}')">
             新增进度
           </button>
-          <button class="edit-btn bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg text-sm" onclick="editTodo('${todo.id}', '${todo.ownerId}', \`${todo.text}\`)">
+          <button class="edit-btn bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-1.5 px-3 rounded-lg text-sm" onclick="editTodo('${todo.id}', '${todo.ownerId}', \`${todo.text}\`)">
             修改
           </button>
-          <button class="export-btn bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg text-sm" onclick="exportTodoAsHtml('${todo.id}')">
+          <button class="export-btn bg-gray-500 hover:bg-gray-600 text-white font-bold py-1.5 px-3 rounded-lg text-sm" onclick="exportTodoAsHtml('${todo.id}')">
             导出
           </button>
-          <button class="delete-btn bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg text-sm" onclick="deleteTodo('${todo.id}', '${todo.ownerId}')">
+          <button class="delete-btn bg-red-500 hover:bg-red-600 text-white font-bold py-1.5 px-3 rounded-lg text-sm" onclick="deleteTodo('${todo.id}', '${todo.ownerId}')">
             删除
           </button>
         </div>
@@ -449,9 +449,9 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
       <div id="todo-details-${todo.id}" class="hidden">
         <div id="progress-form-${todo.id}" class="hidden mt-4">
           <form onsubmit="addProgress(event, '${todo.id}')">
-            <textarea name="progress_text" placeholder="添加新的进度..." required class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-300"></textarea>
+            <textarea name="progress_text" placeholder="添加新的进度..." required class="w-full py-1.5 px-2 border rounded-lg focus:ring-2 focus:ring-blue-300"></textarea>
             <input type="file" name="progress_image" accept="image/*" class="w-full text-sm border rounded-lg p-1 mt-2" multiple>
-            <button type="submit" class="w-full bg-blue-600 text-white font-medium py-2 px-4 rounded-lg mt-2">提交</button>
+            <button type="submit" class="w-full bg-blue-600 text-white font-medium py-1.5 px-3 text-sm rounded-lg mt-2">提交</button>
           </form>
         </div>
         <div id="progress-container-${todo.id}" class="mt-4">
@@ -526,9 +526,10 @@ function renderKeptItems(keptItems, shareLinks) {
               ${returnInfo}
             </div>
             <div class="flex flex-col space-y-1 ml-2">
-                <button class="bg-blue-500 text-white px-2 py-1 text-xs rounded" onclick="showTransferModal('${item.id}')">转交</button>
-                <button class="bg-green-500 text-white px-2 py-1 text-xs rounded" onclick="returnItem('${item.id}')" ${item.returnedAt ? 'disabled' : ''}>归还</button>
-                <button class="delete-btn" style="padding: 2px 6px; font-size: 12px;" onclick="deleteItem('${item.id}')">删除</button>
+                <button class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-0.5 px-1.5 rounded text-xs" onclick="editItem('${item.id}', \`${item.name}\`)">修改</button>
+                <button class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-0.5 px-1.5 rounded text-xs" onclick="showTransferModal('${item.id}')">转交</button>
+                <button class="bg-green-500 hover:bg-green-600 text-white font-bold py-0.5 px-1.5 rounded text-xs" onclick="returnItem('${item.id}')" ${item.returnedAt ? 'disabled' : ''}>归还</button>
+                <button class="bg-red-500 hover:bg-red-600 text-white font-bold py-0.5 px-1.5 rounded text-xs" onclick="deleteItem('${item.id}')">删除</button>
             </div>
         `;
     } else {
@@ -540,9 +541,9 @@ function renderKeptItems(keptItems, shareLinks) {
               <div class="text-xs text-red-500">注意: 此物品为旧数据格式。请转交一次以更新。</div>
             </div>
             <div class="flex flex-col space-y-1 ml-2">
-                <button class="bg-yellow-500 text-white px-2 py-1 text-xs rounded" onclick="editItem('${item.id}', \`${item.name}\`)">修改</button>
-                <button class="bg-blue-500 text-white px-2 py-1 text-xs rounded" onclick="showTransferModal('${item.id}')">转交</button>
-                <button class="delete-btn" style="padding: 2px 6px; font-size: 12px;" onclick="deleteItem('${item.id}')">删除</button>
+                <button class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-0.5 px-1.5 rounded text-xs" onclick="editItem('${item.id}', \`${item.name}\`)">修改</button>
+                <button class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-0.5 px-1.5 rounded text-xs" onclick="showTransferModal('${item.id}')">转交</button>
+                <button class="bg-red-500 hover:bg-red-600 text-white font-bold py-0.5 px-1.5 rounded text-xs" onclick="deleteItem('${item.id}')">删除</button>
             </div>
         `;
     }
@@ -605,7 +606,7 @@ async function editTodo(id, ownerId, currentText) {
   const input = document.createElement('input');
   input.type = 'text';
   input.value = currentText;
-  input.className = 'text-2xl font-medium text-gray-800 w-full';
+  input.className = 'text-lg font-medium text-gray-800 w-full py-1.5 px-2 border rounded-lg';
 
   const saveChanges = async () => {
     const newText = input.value;
@@ -653,7 +654,7 @@ async function editItem(id, currentName) {
   const input = document.createElement('input');
   input.type = 'text';
   input.value = currentName;
-  input.className = 'font-semibold text-gray-700 w-full';
+  input.className = 'font-semibold text-gray-700 w-full py-1 px-2 border rounded';
 
   const saveChanges = async () => {
     const newName = input.value;
@@ -882,8 +883,8 @@ function renderProgress(progress) {
           ${imageUrlsHtml}
         </div>
         <div class="flex flex-col space-y-1 ml-2">
-          <button class="bg-yellow-500 text-white px-2 py-1 text-xs rounded" onclick="editProgress('${p.id}', \`${p.text}\`)">修改</button>
-          <button class="delete-btn" style="padding: 2px 6px; font-size: 12px;" onclick="deleteProgress('${p.id}')">删除</button>
+          <button class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-0.5 px-1.5 rounded text-xs" onclick="editProgress('${p.id}', \`${p.text}\`)">修改</button>
+          <button class="bg-red-500 hover:bg-red-600 text-white font-bold py-0.5 px-1.5 rounded text-xs" onclick="deleteProgress('${p.id}')">删除</button>
         </div>
       </div>
     `;
@@ -925,7 +926,7 @@ async function editProgress(id, currentText) {
   const input = document.createElement('input');
   input.type = 'text';
   input.value = currentText;
-  input.className = 'font-semibold text-gray-700 w-full';
+  input.className = 'font-semibold text-gray-700 w-full py-1 px-2 border rounded';
 
   const saveChanges = async () => {
     const newText = input.value;
