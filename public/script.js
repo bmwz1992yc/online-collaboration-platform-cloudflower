@@ -87,14 +87,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       const name = document.getElementById('item-name').value;
       const keepers = Array.from(document.querySelectorAll('#item-keeper-checkboxes input[name="itemUserIds"]:checked')).map(cb => cb.value);
       const todoId = document.getElementById('item-todo-id').value;
-      const imageFile = document.getElementById('item-image').files[0];
+      const attachmentFile = document.getElementById('item-attachment').files[0];
 
       const formData = new FormData();
       formData.append('name', name);
       keepers.forEach(k => formData.append('keepers', k));
       formData.append('todoId', todoId);
-      if (imageFile) {
-        formData.append('image', imageFile);
+      if (attachmentFile) {
+        formData.append('attachment', attachmentFile);
       }
 
       try {
@@ -152,7 +152,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     addTodoForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const text = addTodoForm.querySelector('input[name="text"]').value;
-      const imageFile = addTodoForm.querySelector('input[name="image"]').files[0];
+      const attachmentFile = addTodoForm.querySelector('input[name="attachment"]').files[0];
       const creatorId = addTodoForm.querySelector('input[name="creatorId"]').value;
       const userIds = Array.from(addTodoForm.querySelectorAll('input[name="userIds"]:checked')).map(cb => cb.value);
 
@@ -160,8 +160,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       formData.append('text', text);
       formData.append('creatorId', creatorId);
       userIds.forEach(id => formData.append('userIds', id));
-      if (imageFile) {
-        formData.append('image', imageFile);
+      if (attachmentFile) {
+        formData.append('attachment', attachmentFile);
       }
 
       try {
@@ -302,7 +302,11 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
       completionInfo = ` | (上次由 <strong>${getDisplayName(todo.completedBy)}</strong> 在 ${formatDate(todo.completedAt)} 完成)`;
     }
 
-    const imageUrlHtml = todo.imageUrl ? `<a data-fslightbox href="${todo.imageUrl}"><img src="${todo.imageUrl}" alt="Todo Image" class="w-16 h-16 object-cover rounded-md mr-4"></a>` : '';
+    const attachmentHtml = todo.attachmentUrl ?
+      (todo.attachmentUrl.type.startsWith('image/') ?
+        `<a data-fslightbox href="${todo.attachmentUrl.url}"><img src="${todo.attachmentUrl.url}" alt="${todo.attachmentUrl.name}" class="w-16 h-16 object-cover rounded-md mr-4"></a>` :
+        `<a href="${todo.attachmentUrl.url}" target="_blank" class="text-blue-600 hover:underline mr-4">${todo.attachmentUrl.name}</a>`
+      ) : '';
 
     const formatActivity = (logEntry) => {
       const actor = `<strong>${getDisplayName(logEntry.actorId)}</strong>`;
@@ -426,7 +430,7 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
       <div class="flex items-center">
         <button onclick="toggleTodoDetails(this, '${todo.id}')" class="mr-4"><i data-lucide="chevron-right"></i></button>
         <input type="checkbox" id="todo-${todo.id}" ${todo.completed ? 'checked' : ''} onchange="toggleTodo('${todo.id}', this.checked, '${todo.ownerId}')" class="mr-4 w-6 h-6 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500">
-        ${imageUrlHtml}
+        ${attachmentHtml}
         <div class="flex-grow">
           <label class="text-2xl font-medium text-gray-800">${todo.text}</label>
           <div class="meta-info text-sm text-gray-500">由 <strong>${creatorDisplayName}</strong> 在 ${formatDate(todo.createdAt)} 创建${ownerInfo}${completionInfo}</div>
@@ -450,7 +454,7 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
         <div id="progress-form-${todo.id}" class="hidden mt-4">
           <form onsubmit="addProgress(event, '${todo.id}')">
             <textarea name="progress_text" placeholder="添加新的进度..." required class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-300"></textarea>
-            <input type="file" name="progress_image" accept="image/*" class="w-full text-sm border rounded-lg p-1 mt-2" multiple>
+            <input type="file" name="progress_attachments" class="w-full text-sm border rounded-lg p-1 mt-2" multiple>
             <button type="submit" class="w-full bg-blue-600 text-white font-medium py-2 px-4 rounded-lg mt-2">提交</button>
           </form>
         </div>
@@ -547,10 +551,14 @@ function renderKeptItems(keptItems, shareLinks) {
         `;
     }
 
-    const imageUrlHtml = item.imageUrl ? `<a data-fslightbox href="${item.imageUrl}"><img src="${item.imageUrl}" alt="Item Image" class="w-16 h-16 object-cover rounded-md mr-4"></a>` : '';
+    const attachmentHtml = item.attachmentUrl ?
+      (item.attachmentUrl.type.startsWith('image/') ?
+        `<a data-fslightbox href="${item.attachmentUrl.url}"><img src="${item.attachmentUrl.url}" alt="${item.attachmentUrl.name}" class="w-16 h-16 object-cover rounded-md mr-4"></a>` :
+        `<a href="${item.attachmentUrl.url}" target="_blank" class="text-blue-600 hover:underline mr-4">${item.attachmentUrl.name}</a>`
+      ) : '';
     return `
       <li data-id="${item.id}" class="p-4 bg-white rounded-lg shadow-sm flex items-start">
-        ${imageUrlHtml}
+        ${attachmentHtml}
         ${itemHtml}
       </li>
     `;
@@ -870,7 +878,13 @@ function showAddProgressForm(todoId) {
 
 function renderProgress(progress) {
   return progress.map(p => {
-    const imageUrlsHtml = p.imageUrls ? p.imageUrls.map(url => `<a data-fslightbox href="${url}"><img src="${url}" alt="Progress Image" class="w-12 h-12 object-cover rounded-md ml-3"></a>`).join('') : '';
+    const attachmentsHtml = p.attachmentUrls ? p.attachmentUrls.map(file => {
+      if (file.type.startsWith('image/')) {
+        return `<a data-fslightbox href="${file.url}"><img src="${file.url}" alt="${file.name}" class="w-12 h-12 object-cover rounded-md ml-3"></a>`;
+      } else {
+        return `<a href="${file.url}" target="_blank" class="text-blue-600 hover:underline ml-3">${file.name}</a>`;
+      }
+    }).join('') : '';
     return `
       <div data-id="${p.id}" class="flex items-start" style="padding-left: 60px; padding-top: 10px;">
         <i data-lucide="git-commit-horizontal" class="w-4 h-4 text-green-600 mr-2 mt-1"></i>
@@ -879,7 +893,7 @@ function renderProgress(progress) {
             <label class="font-semibold text-gray-700">[进度] ${p.text}</label>
             <div class="meta-info">由 <strong>${getDisplayName(p.creatorId)}</strong> 在 ${formatDate(p.createdAt)} 添加</div>
           </div>
-          ${imageUrlsHtml}
+          <div class="flex items-center flex-wrap">${attachmentsHtml}</div>
         </div>
         <div class="flex flex-col space-y-1 ml-2">
           <button class="bg-yellow-500 text-white px-2 py-1 text-xs rounded" onclick="editProgress('${p.id}', \`${p.text}\`)">修改</button>
@@ -894,13 +908,13 @@ async function addProgress(event, todoId) {
   event.preventDefault();
   const form = event.target;
   const text = form.querySelector('textarea[name="progress_text"]').value;
-  const imageFiles = form.querySelector('input[name="progress_image"]').files;
+  const attachmentFiles = form.querySelector('input[name="progress_attachments"]').files;
 
   const formData = new FormData();
   formData.append('todoId', todoId);
   formData.append('text', text);
-  for (const file of imageFiles) {
-    formData.append('images', file);
+  for (const file of attachmentFiles) {
+    formData.append('attachments', file);
   }
 
   try {
@@ -1011,12 +1025,12 @@ async function restoreProgress(id) {
   }
 }
 
-async function imageUrlToDataUri(url) {
-  if (!url) return null;
+async function fileToDataUri(file) {
+  if (!file || !file.url) return null;
   try {
-    const response = await fetch(url);
+    const response = await fetch(file.url);
     if (!response.ok) {
-      console.warn(`Failed to fetch image for data URI conversion: ${url}, status: ${response.status}`);
+      console.warn(`Failed to fetch file for data URI conversion: ${file.url}, status: ${response.status}`);
       return null;
     }
     const blob = await response.blob();
@@ -1024,13 +1038,13 @@ async function imageUrlToDataUri(url) {
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result);
       reader.onerror = (err) => {
-        console.error(`FileReader error for URL ${url}:`, err);
+        console.error(`FileReader error for URL ${file.url}:`, err);
         reject(err);
       };
       reader.readAsDataURL(blob);
     });
   } catch (error) {
-    console.error(`Error converting image to data URI for URL ${url}:`, error);
+    console.error(`Error converting file to data URI for URL ${file.url}:`, error);
     return null;
   }
 }
@@ -1044,31 +1058,36 @@ async function exportTodoAsHtml(todoId) {
 
   const associatedItems = initialData.keptItems.filter(item => item.todoId === todo.id && !item.deletedAt);
 
-  let todoImageHtml = '';
-  if (todo.imageUrl) {
-    const dataUri = await imageUrlToDataUri(todo.imageUrl);
-    if (dataUri) {
-      todoImageHtml = `<div class="image-attachment"><img src="${dataUri}" alt="Todo Image"></div>`;
+  const generateAttachmentHtml = async (file) => {
+    if (!file) return '';
+    const dataUri = await fileToDataUri(file);
+    if (!dataUri) return `<p class="attachment-missing">无法加载附件: ${file.name}</p>`;
+
+    if (file.type.startsWith('image/')) {
+      return `<div class="image-attachment"><img src="${dataUri}" alt="${file.name}"></div>`;
+    } else if (file.type === 'application/pdf') {
+      return `<div class="pdf-attachment"><embed src="${dataUri}" type="application/pdf" width="100%" height="500px" /></div>`;
+    } else {
+      return `<div class="other-attachment"><p>附件: <a href="${dataUri}" download="${file.name}">${file.name}</a> (请右键另存为)</p></div>`;
     }
-  }
+  };
+
+  let todoAttachmentHtml = todo.attachmentUrl ? await generateAttachmentHtml(todo.attachmentUrl) : '';
 
   let progressHtml = '';
   if (todo.progress && todo.progress.length > 0) {
     for (const p of todo.progress) {
-      let progressImagesHtml = '';
-      if (p.imageUrls && p.imageUrls.length > 0) {
-        for (const url of p.imageUrls) {
-          const dataUri = await imageUrlToDataUri(url);
-          if (dataUri) {
-            progressImagesHtml += `<div class="image-attachment"><img src="${dataUri}" alt="Progress Image"></div>`;
-          }
+      let progressAttachmentsHtml = '';
+      if (p.attachmentUrls && p.attachmentUrls.length > 0) {
+        for (const file of p.attachmentUrls) {
+          progressAttachmentsHtml += await generateAttachmentHtml(file);
         }
       }
       progressHtml += `
         <div class="progress-item">
           <p><strong>[进度] ${p.text}</strong></p>
           <p class="meta">由 ${getDisplayName(p.creatorId)} 在 ${formatDate(p.createdAt)} 添加</p>
-          ${progressImagesHtml}
+          ${progressAttachmentsHtml}
         </div>
       `;
     }
@@ -1078,18 +1097,13 @@ async function exportTodoAsHtml(todoId) {
   if (associatedItems.length > 0) {
     for (const item of associatedItems) {
       const keepersDisplay = item.keepers[item.keepers.length - 1].userIds.map(getDisplayName).join(', ');
-      let itemImageHtml = '';
-      if (item.imageUrl) {
-        const dataUri = await imageUrlToDataUri(item.imageUrl);
-        if (dataUri) {
-          itemImageHtml = `<div class="image-attachment"><img src="${dataUri}" alt="Item Image"></div>`;
-        }
-      }
+      let itemAttachmentHtml = item.attachmentUrl ? await generateAttachmentHtml(item.attachmentUrl) : '';
+
       itemsHtml += `
         <div class="kept-item">
           <p><strong>[物品] ${item.name}</strong></p>
           <p class="meta">当前保管人: ${keepersDisplay}</p>
-          ${itemImageHtml}
+          ${itemAttachmentHtml}
         </div>
       `;
     }
@@ -1117,7 +1131,7 @@ async function exportTodoAsHtml(todoId) {
       <h1>事项: <span class="${todo.completed ? 'completed' : ''}">${todo.text}</span></h1>
       <p class="meta">由 ${getDisplayName(todo.creatorId)} 在 ${formatDate(todo.createdAt)} 创建</p>
       ${todo.completed ? `<p class="meta">由 ${getDisplayName(todo.completedBy)} 在 ${formatDate(todo.completedAt)} 完成</p>` : ''}
-      ${todoImageHtml}
+      ${todoAttachmentHtml}
 
       <div class="section">
         <h2>进度更新</h2>
