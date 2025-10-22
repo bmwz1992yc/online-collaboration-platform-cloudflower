@@ -9,6 +9,25 @@ const DELETED_PROGRESS_KEY = 'system:deleted_progress'; // 新增已删除进度
 
 // --- 辅助函数 ---
 
+async function sha256(data) {
+  let buffer;
+  if (data instanceof ReadableStream) {
+    buffer = await new Response(data).arrayBuffer();
+  } else if (typeof data === 'string') {
+    buffer = new TextEncoder().encode(data);
+  } else if (data instanceof ArrayBuffer || data instanceof Uint8Array) {
+    buffer = data;
+  } else if (typeof data === 'object') {
+    buffer = new TextEncoder().encode(JSON.stringify(data));
+  } else {
+    throw new Error('Unsupported data type for sha256');
+  }
+
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 const getKvKey = (userId) => `todos:${userId}`;
 
 function getDisplayName(userId) {
@@ -484,6 +503,156 @@ async function getAllUsersTodos(env) {
 }
 
 // --- API 逻辑处理器 ---
+
+async function handleVerify(request, env) {
+  if (request.method !== 'GET') {
+    return new Response('Method Not Allowed', { status: 405 });
+  }
+
+  try {
+    const url = new URL(request.url);
+    const merkleRoot = url.searchParams.get('merkle_root');
+
+    if (!merkleRoot) {
+      return new Response(JSON.stringify({ error: "Missing 'merkle_root' query parameter" }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+      });
+    }
+
+    // 1. Get block metadata from BLOCKS_BUCKET
+    const blockObject = await env.BLOCKS_BUCKET.get(`blocks/${merkleRoot}.json`);
+    if (blockObject === null) {
+      return new Response(JSON.stringify({
+        success: false,
+        message: 'Verification failed: Block file not found.',
+        status: 'block_not_found'
+      }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+      });
+    }
+    const blockMetadata = await blockObject.json();
+
+    // 2. Get attachment file from R2_BUCKET
+    const attachmentObject = await env.R2_BUCKET.get(blockMetadata.attachment_path);
+    if (attachmentObject === null) {
+      return new Response(JSON.stringify({
+        success: false,
+        message: 'Block is intact, but the original attachment is missing and cannot be verified.',
+        status: 'attachment_not_found',
+        block: blockMetadata
+      }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+      });
+    }
+
+    // 3. Recalculate hash of the attachment
+    const attachmentBuffer = await attachmentObject.arrayBuffer();
+    const recomputedImageSha256 = await sha256(new Uint8Array(attachmentBuffer));
+
+    // 4. Compare hashes
+    const isHashMatching = recomputedImageSha256 === blockMetadata.image_sha256;
+
+    const verificationResult = {
+      success: isHashMatching,
+      message: isHashMatching ? 'Successfully verified: The attachment content matches the block record.' : 'Verification failed: The attachment content hash does not match the block record.',
+      status: isHashMatching ? 'verified' : 'hash_mismatch',
+      block: blockMetadata,
+      recomputed_hash: recomputedImageSha256,
+    };
+
+    return new Response(JSON.stringify(verificationResult), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json;charset=UTF-8' },
+    });
+
+  } catch (error) {
+    console.error('Error in handleVerify:', error);
+    return new Response(JSON.stringify({ error: `Internal Server Error: ${error.message}` }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+    });
+  }
+}
+
+async function handleUpload(request, env) {
+  if (request.method !== 'POST') {
+    return new Response('Method Not Allowed', { status: 405 });
+  }
+
+  try {
+    const formData = await request.formData();
+    const imageFile = formData.get('image_file');
+    const prevHash = formData.get('prev_hash');
+
+    if (!imageFile || !prevHash) {
+      return new Response(JSON.stringify({ error: "Missing 'image_file' or 'prev_hash'" }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+      });
+    }
+
+    // 1. Calculate image hash
+    const imageBuffer = await imageFile.arrayBuffer();
+    const imageSha256 = await sha256(new Uint8Array(imageBuffer));
+
+    // 2. Fetch real-time anchor from Coinbase
+    const coinbaseResponse = await fetch('https://api.coinbase.com/v2/prices/BTC-USD/spot');
+    if (!coinbaseResponse.ok) {
+      throw new Error(`Coinbase API failed with status: ${coinbaseResponse.status}`);
+    }
+    const coinbaseData = await coinbaseResponse.json();
+    const btcUsdAnchor = coinbaseData.data.amount;
+
+    // 3. Generate block metadata
+    const timestamp = new Date().toISOString();
+    const fileUuid = crypto.randomUUID();
+    const extension = imageFile.name.split('.').pop() || 'jpg';
+    const attachmentPath = `attachments/${fileUuid}.${extension}`;
+
+    const blockMetadata = {
+      timestamp: timestamp,
+      prev_hash: prevHash,
+      image_sha256: imageSha256,
+      btc_usd_anchor: btcUsdAnchor,
+      attachment_path: attachmentPath,
+    };
+
+    // 4. Calculate Merkle root (hash of the block metadata)
+    const merkleRoot = await sha256(JSON.stringify(blockMetadata));
+
+    // 5. Write image attachment to R2_BUCKET
+    await env.R2_BUCKET.put(attachmentPath, imageBuffer, {
+      httpMetadata: {
+        contentType: imageFile.type,
+        contentDisposition: `inline; filename="${encodeURIComponent(imageFile.name)}"`
+       },
+    });
+
+    // 6. Write block file to BLOCKS_BUCKET (immutable)
+    await env.BLOCKS_BUCKET.put(`blocks/${merkleRoot}.json`, JSON.stringify(blockMetadata), {
+      httpMetadata: { contentType: 'application/json;charset=UTF-8' },
+    });
+
+    // 7. Return the new block's hash and path
+    return new Response(JSON.stringify({
+      merkle_root: merkleRoot,
+      attachment_path: attachmentPath
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json;charset=UTF-8' },
+    });
+
+  } catch (error) {
+    console.error('Error in handleUpload:', error);
+    return new Response(JSON.stringify({ error: `Internal Server Error: ${error.message}` }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json;charset=UTF-8' }
+    });
+  }
+}
 
 async function handleAddTodo(request, env) {
   const referer = request.headers.get('Referer');
@@ -1050,6 +1219,10 @@ export async function onRequest(context) {
 
   // Handle API routes
   switch (path) {
+    case '/verify':
+      return handleVerify(request, env);
+    case '/upload':
+      return handleUpload(request, env);
     case '/data':
       return handleApiData(request, env);
     case '/add_todo':
