@@ -442,20 +442,20 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
         <input type="checkbox" id="todo-${todo.id}" ${todo.completed ? 'checked' : ''} onchange="toggleTodo('${todo.id}', this.checked, '${todo.ownerId}')" class="mr-4 w-6 h-6 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500">
         ${attachmentHtml}
         <div class="flex-grow">
-          <label class="text-2xl font-medium text-gray-800">${todo.text}</label>
+          <label class="text-lg font-medium text-gray-800">${todo.text}</label>
           <div class="meta-info text-sm text-gray-500">由 <strong>${creatorDisplayName}</strong> 在 ${formatDate(todo.createdAt)} 创建${ownerInfo}${completionInfo}</div>
         </div>
         <div class="flex items-center space-x-2 ml-auto">
-          <button class="add-progress-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg text-sm" onclick="showAddProgressForm('${todo.id}')">
+          <button class="add-progress-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-1.5 px-3 rounded-lg text-sm" onclick="showAddProgressForm('${todo.id}')">
             新增进度
           </button>
-          <button class="edit-btn bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg text-sm" onclick="editTodo('${todo.id}', '${todo.ownerId}', \`${todo.text}\`)">
+          <button class="edit-btn bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-1.5 px-3 rounded-lg text-sm" onclick="editTodo('${todo.id}', '${todo.ownerId}', \`${todo.text}\`)">
             修改
           </button>
-          <button class="export-btn bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg text-sm" onclick="exportTodoAsHtml('${todo.id}')">
+          <button class="export-btn bg-gray-500 hover:bg-gray-600 text-white font-bold py-1.5 px-3 rounded-lg text-sm" onclick="exportTodoAsHtml('${todo.id}')">
             导出
           </button>
-          <button class="delete-btn bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg text-sm" onclick="deleteTodo('${todo.id}', '${todo.ownerId}')">
+          <button class="delete-btn bg-red-500 hover:bg-red-600 text-white font-bold py-1.5 px-3 rounded-lg text-sm" onclick="deleteTodo('${todo.id}', '${todo.ownerId}')">
             删除
           </button>
         </div>
@@ -463,9 +463,9 @@ function renderAllTodos(allTodos, keptItems, shareLinks) {
       <div id="todo-details-${todo.id}" class="hidden">
         <div id="progress-form-${todo.id}" class="hidden mt-4">
           <form onsubmit="addProgress(event, '${todo.id}')">
-            <textarea name="progress_text" placeholder="添加新的进度..." required class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-300"></textarea>
+            <textarea name="progress_text" placeholder="添加新的进度..." required class="w-full py-1.5 px-2 border rounded-lg focus:ring-2 focus:ring-blue-300"></textarea>
             <input type="file" name="progress_attachments" class="w-full text-sm border rounded-lg p-1 mt-2" multiple>
-            <button type="submit" class="w-full bg-blue-600 text-white font-medium py-2 px-4 rounded-lg mt-2">提交</button>
+            <button type="submit" class="w-full bg-blue-600 text-white font-medium py-1.5 px-3 rounded-lg mt-2">提交</button>
           </form>
         </div>
         <div id="progress-container-${todo.id}" class="mt-4">
@@ -633,7 +633,7 @@ async function editTodo(id, ownerId, currentText) {
   const input = document.createElement('input');
   input.type = 'text';
   input.value = currentText;
-  input.className = 'text-2xl font-medium text-gray-800 w-full';
+  input.className = 'text-lg font-medium text-gray-800 w-full';
 
   const saveChanges = async () => {
     const newText = input.value;

@@ -44,12 +44,12 @@
       <section class="card p-6 space-y-4">
         <div class="flex items-center gap-2 mb-2">
           <i data-lucide="plus-circle" class="w-5 h-5 text-blue-600"></i>
-          <h2 class="text-lg font-semibold text-blue-700">添加新事项</h2>
+          <h2 class="text-xl font-semibold text-blue-700">添加新事项</h2>
         </div>
         <form action="/api/add_todo" method="POST" class="space-y-3" enctype="multipart/form-data">
           <input type="hidden" name="creatorId" value="admin" />
           <input type="text" name="text" placeholder="输入新的待办事项..." required
-                 class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-300" />
+                 class="w-full py-1.5 px-2 border rounded-lg focus:ring-2 focus:ring-blue-300" />
           <input type="file" name="attachment"
                  class="w-full text-sm border rounded-lg p-1" />
           <div class="p-3 bg-gray-50 border rounded-lg">
@@ -74,11 +74,11 @@
       <section class="card p-6 space-y-4">
         <div class="flex items-center gap-2 mb-2">
           <i data-lucide="package" class="w-5 h-5 text-purple-600"></i>
-          <h2 class="text-lg font-semibold text-purple-700">物品交接</h2>
+          <h2 class="text-xl font-semibold text-purple-700">物品交接</h2>
         </div>
         <form id="add-item-form" class="space-y-3" enctype="multipart/form-data">
           <input type="text" id="item-name" name="name" placeholder="物品名称..." required
-                 class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-purple-300" />
+                 class="w-full py-1.5 px-2 border rounded-lg focus:ring-2 focus:ring-purple-300" />
           <div class="p-3 bg-gray-50 border rounded-lg">
             <h3 class="text-sm font-semibold mb-1 text-gray-700">持有人 (可多选)</h3>
             <div id="item-keeper-checkboxes" class="space-y-1 max-h-20 overflow-y-auto text-sm">
@@ -92,12 +92,12 @@
           </div>
           <input type="file" id="item-attachment" name="attachment"
                  class="w-full text-sm border rounded-lg p-1" />
-          <select id="item-todo-id" class="w-full p-2 border rounded-lg text-sm">
+          <select id="item-todo-id" class="w-full py-1.5 px-2 border rounded-lg text-sm">
             <option value="">选择关联待-事项 (可选)</option>
             <!-- 待办事项选项将在这里动态插入 -->
           </select>
           <button type="submit"
-                  class="w-full bg-purple-600 text-white font-medium py-2 px-4 rounded-lg">
+                  class="w-full bg-purple-600 text-white font-medium py-1.5 px-3 rounded-lg">
             添加交接物品
           </button>
         </form>
@@ -118,7 +118,7 @@
     <section class="card p-6">
       <div class="flex items-center gap-2 mb-4">
         <i data-lucide="check-square" class="w-6 h-6 text-blue-600"></i>
-        <h2 class="text-2xl font-semibold text-gray-800">所有事项</h2>
+        <h2 class="text-xl font-semibold text-gray-800">所有事项</h2>
       </div>
       <ul id="all-todos-list" class="space-y-3 text-sm">
         <p class="text-center text-gray-500 py-10">无任何待办事项。</p>
@@ -129,16 +129,16 @@
     <section class="card p-6">
       <div class="flex items-center gap-2 mb-4">
         <i data-lucide="users" class="w-6 h-6 text-green-600"></i>
-        <h2 class="text-2xl font-semibold text-gray-800">用户管理</h2>
+        <h2 class="text-xl font-semibold text-gray-800">用户管理</h2>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
         <div>
           <h3 class="text-lg font-semibold mb-2">新增用户</h3>
           <form action="/api/add_user" method="POST" class="flex space-x-2">
             <input type="text" name="username" placeholder="新用户名..." required
-                   class="flex-grow p-2 border rounded-lg focus:ring-2 focus:ring-green-300" />
+                   class="flex-grow py-1.5 px-2 border rounded-lg focus:ring-2 focus:ring-green-300" />
             <button type="submit"
-                    class="w-full bg-green-500 text-white font-medium py-2 px-4 rounded-lg">
+                    class="w-full bg-green-500 text-white font-medium py-1.5 px-3 rounded-lg">
               创建
             </button>
           </form>
@@ -156,7 +156,7 @@
     <section class="card p-6">
       <div class="flex items-center gap-2 mb-4">
         <i data-lucide="trash-2" class="w-6 h-6 text-red-500"></i>
-        <h2 class="text-2xl font-semibold text-gray-800">最近删除 (20天内)</h2>
+        <h2 class="text-xl font-semibold text-gray-800">最近删除 (20天内)</h2>
       </div>
       <ul id="deleted-todos-list" class="space-y-3 text-sm text-gray-500">
         <p class="text-center py-10">无已删除事项。</p>
@@ -188,8 +188,8 @@
           </div>
         </div>
         <div class="flex justify-end space-x-2 mt-4">
-          <button type="button" onclick="closeTransferModal()" class="bg-gray-300 px-4 py-2 rounded-lg">取消</button>
-          <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg">确认转交</button>
+          <button type="button" onclick="closeTransferModal()" class="bg-gray-300 py-1.5 px-3 rounded-lg">取消</button>
+          <button type="submit" class="bg-blue-600 text-white py-1.5 px-3 rounded-lg">确认转交</button>
         </div>
       </form>
     </div>
