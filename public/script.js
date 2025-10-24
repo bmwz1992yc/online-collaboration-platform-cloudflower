@@ -1,12 +1,97 @@
 let initialData; // Declare initialData globally
 
 document.addEventListener('DOMContentLoaded', async () => {
-  lucide.createIcons();
-  refreshFsLightbox();
+  // Safely initialize libraries
+  if (window.lucide) {
+    lucide.createIcons();
+  }
+  if (window.refreshFsLightbox) {
+    refreshFsLightbox();
+  }
 
-  // --- Attach Form Event Listeners ---
-  // This is done BEFORE fetching data to ensure forms work even if data loading fails.
+  // Attach form event listeners immediately
+  attachFormEventListeners();
 
+  // Fetch and render data
+  try {
+    initialData = await fetch('/api/data').then(res => {
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      return res.json();
+    });
+  const { allTodos, recentDeletedTodos, keptItems, recentDeletedItems, shareLinks, isRootView } = initialData;
+
+  // Render Todo User Options
+  const todoUserOptionsContainer = document.getElementById('todo-user-options');
+  if (todoUserOptionsContainer) {
+    const userOptionsHtml = Object.values(shareLinks).map(link =>
+      `<label class="flex items-center space-x-2">
+          <input type="checkbox" name="userIds" value="${link.username}" class="rounded border-gray-300 text-blue-600 focus:ring-blue-300">
+          <span>${getDisplayName(link.username)}</span>
+      </label>`
+    ).join('');
+    todoUserOptionsContainer.insertAdjacentHTML('beforeend', userOptionsHtml);
+  }
+
+  // Render Item Keeper Checkboxes
+  const itemKeeperCheckboxesContainer = document.getElementById('item-keeper-checkboxes');
+  if (itemKeeperCheckboxesContainer) {
+    const itemUserOptionsHtml = Object.values(shareLinks).map(link =>
+      `<label class="flex items-center space-x-2">
+          <input type="checkbox" name="itemUserIds" value="${link.username}" class="rounded border-gray-300 text-purple-600 focus:ring-purple-300">
+          <span>${getDisplayName(link.username)}</span>
+      </label>`
+    ).join('');
+    itemKeeperCheckboxesContainer.insertAdjacentHTML('beforeend', itemUserOptionsHtml);
+  }
+
+  // Render Item Todo ID Options
+  const itemTodoIdSelect = document.getElementById('item-todo-id');
+  if (itemTodoIdSelect) {
+    const todoOptionsHtml = allTodos.map(todo => `
+      <option value="${todo.id}">${todo.text} (由 ${getDisplayName(todo.creatorId)} 创建)</option>
+    `).join('');
+    itemTodoIdSelect.insertAdjacentHTML('beforeend', todoOptionsHtml);
+  }
+
+  // Render All Todos List
+  const allTodosList = document.getElementById('all-todos-list');
+  if (allTodosList) {
+    allTodosList.innerHTML = renderAllTodos(allTodos, keptItems, shareLinks);
+  }
+
+  // Render User List
+  const userList = document.getElementById('user-list');
+  const userCount = document.getElementById('user-count');
+  if (userList && userCount) {
+    userList.innerHTML = renderUserList(shareLinks);
+    userCount.textContent = Object.keys(shareLinks).length;
+  }
+
+  // Render Deleted Todos List
+  const deletedTodosList = document.getElementById('deleted-todos-list');
+  if (deletedTodosList) {
+    deletedTodosList.innerHTML = renderDeletedTodos(recentDeletedTodos);
+  }
+
+  // Render Kept Items List
+  const keptItemsList = document.getElementById('kept-items-list');
+  if (keptItemsList) {
+    keptItemsList.innerHTML = renderKeptItems(keptItems, shareLinks);
+  }
+
+  // Render Deleted Items List
+  const deletedItemsList = document.getElementById('deleted-items-list');
+  if (deletedItemsList) {
+    deletedItemsList.innerHTML = renderDeletedItems(recentDeletedItems);
+  }
+
+  // Render Deleted Progress List
+  const deletedProgressList = document.getElementById('deleted-progress-list');
+  if (deletedProgressList) {
+    deletedProgressList.innerHTML = renderDeletedProgress(initialData.recentDeletedProgress || []);
+  }
+
+  // Event Listeners for Forms
   const addItemForm = document.getElementById('add-item-form');
   if (addItemForm) {
     addItemForm.addEventListener('submit', async (e) => {
@@ -130,89 +215,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Finalize UI
-  lucide.createIcons();
-  refreshFsLightbox();
-
-  // --- Fetch and Render Initial Data ---
-  try {
-    // Fetch initial data
-    initialData = await fetch('/api/data').then(res => {
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
-      return res.json();
-    });
-    const { allTodos, recentDeletedTodos, keptItems, recentDeletedItems, shareLinks, isRootView } = initialData;
-
-    // Render Todo User Options
-    const todoUserOptionsContainer = document.getElementById('todo-user-options');
-    if (todoUserOptionsContainer) {
-      const userOptionsHtml = Object.values(shareLinks).map(link =>
-        `<label class="flex items-center space-x-2">
-            <input type="checkbox" name="userIds" value="${link.username}" class="rounded border-gray-300 text-blue-600 focus:ring-blue-300">
-            <span>${getDisplayName(link.username)}</span>
-        </label>`
-      ).join('');
-      todoUserOptionsContainer.insertAdjacentHTML('beforeend', userOptionsHtml);
+    if (window.lucide) {
+      lucide.createIcons();
     }
-
-    // Render Item Keeper Checkboxes
-    const itemKeeperCheckboxesContainer = document.getElementById('item-keeper-checkboxes');
-    if (itemKeeperCheckboxesContainer) {
-      const itemUserOptionsHtml = Object.values(shareLinks).map(link =>
-        `<label class="flex items-center space-x-2">
-            <input type="checkbox" name="itemUserIds" value="${link.username}" class="rounded border-gray-300 text-purple-600 focus:ring-purple-300">
-            <span>${getDisplayName(link.username)}</span>
-        </label>`
-      ).join('');
-      itemKeeperCheckboxesContainer.insertAdjacentHTML('beforeend', itemUserOptionsHtml);
-    }
-
-    // Render Item Todo ID Options
-    const itemTodoIdSelect = document.getElementById('item-todo-id');
-    if (itemTodoIdSelect) {
-      const todoOptionsHtml = allTodos.map(todo => `
-        <option value="${todo.id}">${todo.text} (由 ${getDisplayName(todo.creatorId)} 创建)</option>
-      `).join('');
-      itemTodoIdSelect.insertAdjacentHTML('beforeend', todoOptionsHtml);
-    }
-
-    // Render All Todos List
-    const allTodosList = document.getElementById('all-todos-list');
-    if (allTodosList) {
-      allTodosList.innerHTML = renderAllTodos(allTodos, keptItems, shareLinks);
-    }
-
-    // Render User List
-    const userList = document.getElementById('user-list');
-    const userCount = document.getElementById('user-count');
-    if (userList && userCount) {
-      userList.innerHTML = renderUserList(shareLinks);
-      userCount.textContent = Object.keys(shareLinks).length;
-    }
-
-    // Render Deleted Todos List
-    const deletedTodosList = document.getElementById('deleted-todos-list');
-    if (deletedTodosList) {
-      deletedTodosList.innerHTML = renderDeletedTodos(recentDeletedTodos);
-    }
-
-    // Render Kept Items List
-    const keptItemsList = document.getElementById('kept-items-list');
-    if (keptItemsList) {
-      keptItemsList.innerHTML = renderKeptItems(keptItems, shareLinks);
-    }
-
-    // Render Deleted Items List
-    const deletedItemsList = document.getElementById('deleted-items-list');
-    if (deletedItemsList) {
-      deletedItemsList.innerHTML = renderDeletedItems(recentDeletedItems);
-    }
-
-    // Render Deleted Progress List
-    const deletedProgressList = document.getElementById('deleted-progress-list');
-    if (deletedProgressList) {
-      deletedProgressList.innerHTML = renderDeletedProgress(initialData.recentDeletedProgress || []);
+    if (window.refreshFsLightbox) {
+      refreshFsLightbox();
     }
   } catch (error) {
     console.error('Failed to fetch or render initial data:', error);
@@ -227,11 +234,131 @@ document.addEventListener('DOMContentLoaded', async () => {
       `;
     }
   }
-
-  // Finalize UI
-  lucide.createIcons();
-  refreshFsLightbox();
 });
+
+function attachFormEventListeners() {
+  const addItemForm = document.getElementById('add-item-form');
+  if (addItemForm) {
+    addItemForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('item-name').value;
+      const keepers = Array.from(document.querySelectorAll('#item-keeper-checkboxes input[name="itemUserIds"]:checked')).map(cb => cb.value);
+      const todoId = document.getElementById('item-todo-id').value;
+      const attachmentFile = document.getElementById('item-attachment').files[0];
+
+      const formData = new FormData();
+      formData.append('name', name);
+      keepers.forEach(k => formData.append('keepers', k));
+      formData.append('todoId', todoId);
+      if (attachmentFile) {
+        formData.append('attachment', attachmentFile);
+      }
+
+      try {
+        const response = await fetch('/api/add_item', {
+          method: 'POST',
+          body: formData,
+        });
+        if (!response.ok) throw new Error('添加物品失败');
+        await refreshDataAndRender();
+        // Clear the form
+        e.target.reset();
+      } catch (error) {
+        console.error("Add item failed:", error);
+        alert('添加物品失败，请重试。');
+      }
+    });
+  }
+
+  const transferForm = document.getElementById('transfer-item-form');
+  if(transferForm) {
+      transferForm.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const itemId = document.getElementById('transfer-item-id').value;
+          const newKeepers = Array.from(transferForm.querySelectorAll('input[name="newKeepers"]:checked')).map(cb => cb.value);
+
+          if (newKeepers.length === 0) {
+              alert('请至少选择一位新保管人。');
+              return;
+          }
+
+          const formData = new FormData();
+          formData.append('itemId', itemId);
+          newKeepers.forEach(k => formData.append('newKeepers', k));
+
+          try {
+              const response = await fetch('/api/transfer_item', {
+                  method: 'POST',
+                  body: formData,
+              });
+              if (!response.ok) {
+                  const errorText = await response.text();
+                  throw new Error('转交失败: ' + errorText);
+              }
+              closeTransferModal();
+              await refreshDataAndRender();
+          } catch (error) {
+              console.error("Transfer failed:", error);
+              alert(error.message);
+          }
+      });
+  }
+
+  const addTodoForm = document.querySelector('form[action="/api/add_todo"]');
+  if (addTodoForm) {
+    addTodoForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = addTodoForm.querySelector('input[name="text"]').value;
+      const attachmentFile = addTodoForm.querySelector('input[name="attachment"]').files[0];
+      const creatorId = addTodoForm.querySelector('input[name="creatorId"]').value;
+      const userIds = Array.from(addTodoForm.querySelectorAll('input[name="userIds"]:checked')).map(cb => cb.value);
+
+      const formData = new FormData();
+      formData.append('text', text);
+      formData.append('creatorId', creatorId);
+      userIds.forEach(id => formData.append('userIds', id));
+      if (attachmentFile) {
+        formData.append('attachment', attachmentFile);
+      }
+
+      try {
+        const response = await fetch('/api/add_todo', {
+          method: 'POST',
+          body: formData,
+        });
+        if (!response.ok) throw new Error('添加事项失败');
+        await refreshDataAndRender();
+        e.target.reset();
+      } catch (error) {
+        console.error("Add todo failed:", error);
+        alert('添加事项失败，请重试。');
+      }
+    });
+  }
+
+  const addUserForm = document.querySelector('form[action="/api/add_user"]');
+  if (addUserForm) {
+    addUserForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = addUserForm.querySelector('input[name="username"]').value;
+      const formData = new FormData();
+      formData.append('username', username);
+
+      try {
+        const response = await fetch('/api/add_user', {
+          method: 'POST',
+          body: formData,
+        });
+        if (!response.ok) throw new Error('创建用户失败');
+        await refreshDataAndRender();
+        e.target.reset();
+      } catch (error) {
+        console.error("Add user failed:", error);
+        alert('创建用户失败，请重试。');
+      }
+    });
+  }
+}
 
 // Helper functions (moved from backend)
 async function refreshDataAndRender() {
@@ -275,8 +402,12 @@ async function refreshDataAndRender() {
     }
 
     // 3. Re-initialize icons and lightboxes
-    lucide.createIcons();
-    refreshFsLightbox();
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+    if (window.refreshFsLightbox) {
+      refreshFsLightbox();
+    }
 
   } catch (error) {
     console.error("Failed to refresh data and render:", error);
