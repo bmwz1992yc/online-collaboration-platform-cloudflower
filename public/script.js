@@ -4,82 +4,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   lucide.createIcons();
   refreshFsLightbox();
 
-  // Fetch initial data
-  initialData = await fetch('/api/data').then(res => res.json());
-  const { allTodos, recentDeletedTodos, keptItems, recentDeletedItems, shareLinks, isRootView } = initialData;
+  // --- Attach Form Event Listeners ---
+  // This is done BEFORE fetching data to ensure forms work even if data loading fails.
 
-  // Render Todo User Options
-  const todoUserOptionsContainer = document.getElementById('todo-user-options');
-  if (todoUserOptionsContainer) {
-    const userOptionsHtml = Object.values(shareLinks).map(link => 
-      `<label class="flex items-center space-x-2">
-          <input type="checkbox" name="userIds" value="${link.username}" class="rounded border-gray-300 text-blue-600 focus:ring-blue-300">
-          <span>${getDisplayName(link.username)}</span>
-      </label>`
-    ).join('');
-    todoUserOptionsContainer.insertAdjacentHTML('beforeend', userOptionsHtml);
-  }
-
-  // Render Item Keeper Checkboxes
-  const itemKeeperCheckboxesContainer = document.getElementById('item-keeper-checkboxes');
-  if (itemKeeperCheckboxesContainer) {
-    const itemUserOptionsHtml = Object.values(shareLinks).map(link => 
-      `<label class="flex items-center space-x-2">
-          <input type="checkbox" name="itemUserIds" value="${link.username}" class="rounded border-gray-300 text-purple-600 focus:ring-purple-300">
-          <span>${getDisplayName(link.username)}</span>
-      </label>`
-    ).join('');
-    itemKeeperCheckboxesContainer.insertAdjacentHTML('beforeend', itemUserOptionsHtml);
-  }
-
-  // Render Item Todo ID Options
-  const itemTodoIdSelect = document.getElementById('item-todo-id');
-  if (itemTodoIdSelect) {
-    const todoOptionsHtml = allTodos.map(todo => `
-      <option value="${todo.id}">${todo.text} (由 ${getDisplayName(todo.creatorId)} 创建)</option>
-    `).join('');
-    itemTodoIdSelect.insertAdjacentHTML('beforeend', todoOptionsHtml);
-  }
-
-  // Render All Todos List
-  const allTodosList = document.getElementById('all-todos-list');
-  if (allTodosList) {
-    allTodosList.innerHTML = renderAllTodos(allTodos, keptItems, shareLinks);
-  }
-
-  // Render User List
-  const userList = document.getElementById('user-list');
-  const userCount = document.getElementById('user-count');
-  if (userList && userCount) {
-    userList.innerHTML = renderUserList(shareLinks);
-    userCount.textContent = Object.keys(shareLinks).length;
-  }
-
-  // Render Deleted Todos List
-  const deletedTodosList = document.getElementById('deleted-todos-list');
-  if (deletedTodosList) {
-    deletedTodosList.innerHTML = renderDeletedTodos(recentDeletedTodos);
-  }
-
-  // Render Kept Items List
-  const keptItemsList = document.getElementById('kept-items-list');
-  if (keptItemsList) {
-    keptItemsList.innerHTML = renderKeptItems(keptItems, shareLinks);
-  }
-
-  // Render Deleted Items List
-  const deletedItemsList = document.getElementById('deleted-items-list');
-  if (deletedItemsList) {
-    deletedItemsList.innerHTML = renderDeletedItems(recentDeletedItems);
-  }
-
-  // Render Deleted Progress List
-  const deletedProgressList = document.getElementById('deleted-progress-list');
-  if (deletedProgressList) {
-    deletedProgressList.innerHTML = renderDeletedProgress(initialData.recentDeletedProgress || []);
-  }
-
-  // Event Listeners for Forms
   const addItemForm = document.getElementById('add-item-form');
   if (addItemForm) {
     addItemForm.addEventListener('submit', async (e) => {
@@ -200,6 +127,105 @@ document.addEventListener('DOMContentLoaded', async () => {
         alert('创建用户失败，请重试。');
       }
     });
+  }
+
+  // Finalize UI
+  lucide.createIcons();
+  refreshFsLightbox();
+
+  // --- Fetch and Render Initial Data ---
+  try {
+    // Fetch initial data
+    initialData = await fetch('/api/data').then(res => {
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      return res.json();
+    });
+    const { allTodos, recentDeletedTodos, keptItems, recentDeletedItems, shareLinks, isRootView } = initialData;
+
+    // Render Todo User Options
+    const todoUserOptionsContainer = document.getElementById('todo-user-options');
+    if (todoUserOptionsContainer) {
+      const userOptionsHtml = Object.values(shareLinks).map(link =>
+        `<label class="flex items-center space-x-2">
+            <input type="checkbox" name="userIds" value="${link.username}" class="rounded border-gray-300 text-blue-600 focus:ring-blue-300">
+            <span>${getDisplayName(link.username)}</span>
+        </label>`
+      ).join('');
+      todoUserOptionsContainer.insertAdjacentHTML('beforeend', userOptionsHtml);
+    }
+
+    // Render Item Keeper Checkboxes
+    const itemKeeperCheckboxesContainer = document.getElementById('item-keeper-checkboxes');
+    if (itemKeeperCheckboxesContainer) {
+      const itemUserOptionsHtml = Object.values(shareLinks).map(link =>
+        `<label class="flex items-center space-x-2">
+            <input type="checkbox" name="itemUserIds" value="${link.username}" class="rounded border-gray-300 text-purple-600 focus:ring-purple-300">
+            <span>${getDisplayName(link.username)}</span>
+        </label>`
+      ).join('');
+      itemKeeperCheckboxesContainer.insertAdjacentHTML('beforeend', itemUserOptionsHtml);
+    }
+
+    // Render Item Todo ID Options
+    const itemTodoIdSelect = document.getElementById('item-todo-id');
+    if (itemTodoIdSelect) {
+      const todoOptionsHtml = allTodos.map(todo => `
+        <option value="${todo.id}">${todo.text} (由 ${getDisplayName(todo.creatorId)} 创建)</option>
+      `).join('');
+      itemTodoIdSelect.insertAdjacentHTML('beforeend', todoOptionsHtml);
+    }
+
+    // Render All Todos List
+    const allTodosList = document.getElementById('all-todos-list');
+    if (allTodosList) {
+      allTodosList.innerHTML = renderAllTodos(allTodos, keptItems, shareLinks);
+    }
+
+    // Render User List
+    const userList = document.getElementById('user-list');
+    const userCount = document.getElementById('user-count');
+    if (userList && userCount) {
+      userList.innerHTML = renderUserList(shareLinks);
+      userCount.textContent = Object.keys(shareLinks).length;
+    }
+
+    // Render Deleted Todos List
+    const deletedTodosList = document.getElementById('deleted-todos-list');
+    if (deletedTodosList) {
+      deletedTodosList.innerHTML = renderDeletedTodos(recentDeletedTodos);
+    }
+
+    // Render Kept Items List
+    const keptItemsList = document.getElementById('kept-items-list');
+    if (keptItemsList) {
+      keptItemsList.innerHTML = renderKeptItems(keptItems, shareLinks);
+    }
+
+    // Render Deleted Items List
+    const deletedItemsList = document.getElementById('deleted-items-list');
+    if (deletedItemsList) {
+      deletedItemsList.innerHTML = renderDeletedItems(recentDeletedItems);
+    }
+
+    // Render Deleted Progress List
+    const deletedProgressList = document.getElementById('deleted-progress-list');
+    if (deletedProgressList) {
+      deletedProgressList.innerHTML = renderDeletedProgress(initialData.recentDeletedProgress || []);
+    }
+  } catch (error) {
+    console.error('Failed to fetch or render initial data:', error);
+    const allTodosList = document.getElementById('all-todos-list');
+    if (allTodosList) {
+      allTodosList.innerHTML = `
+        <div class="text-center text-red-500 p-10">
+          <h2 class="text-xl font-bold">数据加载失败</h2>
+          <p>无法连接到服务器或数据解析出错。请检查后台服务是否正常运行，并刷新页面重试。</p>
+          <p class="text-sm mt-2">错误详情: ${error.message}</p>
+        </div>
+      `;
+    }
   }
 
   // Finalize UI
