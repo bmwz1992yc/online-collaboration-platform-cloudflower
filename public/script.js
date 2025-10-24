@@ -1,108 +1,9 @@
 let initialData; // Declare initialData globally
 
-const debugLog = (message) => {
-  const logContainer = document.getElementById('debug-log');
-  if (logContainer) {
-    logContainer.innerHTML += `${new Date().toISOString()}: ${message}<br>`;
-  }
-  console.log(message);
-};
-
 document.addEventListener('DOMContentLoaded', async () => {
-  debugLog('DOMContentLoaded event fired.');
-  try {
-    debugLog('Attempting to initialize lucide icons...');
-    if (window.lucide) {
-      lucide.createIcons();
-      debugLog('lucide.createIcons() called successfully.');
-    } else {
-      debugLog('lucide library not found.');
-    }
-
-    debugLog('Attempting to initialize fslightbox...');
-    if (window.refreshFsLightbox) {
-      refreshFsLightbox();
-      debugLog('refreshFsLightbox() called successfully.');
-    } else {
-      debugLog('fslightbox library not found.');
-    }
-
-  // Fetch initial data
-  initialData = await fetch('/api/data').then(res => res.json());
-  const { allTodos, recentDeletedTodos, keptItems, recentDeletedItems, shareLinks, isRootView } = initialData;
-
-  // Render Todo User Options
-  const todoUserOptionsContainer = document.getElementById('todo-user-options');
-  if (todoUserOptionsContainer) {
-    const userOptionsHtml = Object.values(shareLinks).map(link =>
-      `<label class="flex items-center space-x-2">
-          <input type="checkbox" name="userIds" value="${link.username}" class="rounded border-gray-300 text-blue-600 focus:ring-blue-300">
-          <span>${getDisplayName(link.username)}</span>
-      </label>`
-    ).join('');
-    todoUserOptionsContainer.insertAdjacentHTML('beforeend', userOptionsHtml);
-  }
-
-  // Render Item Keeper Checkboxes
-  const itemKeeperCheckboxesContainer = document.getElementById('item-keeper-checkboxes');
-  if (itemKeeperCheckboxesContainer) {
-    const itemUserOptionsHtml = Object.values(shareLinks).map(link =>
-      `<label class="flex items-center space-x-2">
-          <input type="checkbox" name="itemUserIds" value="${link.username}" class="rounded border-gray-300 text-purple-600 focus:ring-purple-300">
-          <span>${getDisplayName(link.username)}</span>
-      </label>`
-    ).join('');
-    itemKeeperCheckboxesContainer.insertAdjacentHTML('beforeend', itemUserOptionsHtml);
-  }
-
-  // Render Item Todo ID Options
-  const itemTodoIdSelect = document.getElementById('item-todo-id');
-  if (itemTodoIdSelect) {
-    const todoOptionsHtml = allTodos.map(todo => `
-      <option value="${todo.id}">${todo.text} (由 ${getDisplayName(todo.creatorId)} 创建)</option>
-    `).join('');
-    itemTodoIdSelect.insertAdjacentHTML('beforeend', todoOptionsHtml);
-  }
-
-  // Render All Todos List
-  const allTodosList = document.getElementById('all-todos-list');
-  if (allTodosList) {
-    allTodosList.innerHTML = renderAllTodos(allTodos, keptItems, shareLinks);
-  }
-
-  // Render User List
-  const userList = document.getElementById('user-list');
-  const userCount = document.getElementById('user-count');
-  if (userList && userCount) {
-    userList.innerHTML = renderUserList(shareLinks);
-    userCount.textContent = Object.keys(shareLinks).length;
-  }
-
-  // Render Deleted Todos List
-  const deletedTodosList = document.getElementById('deleted-todos-list');
-  if (deletedTodosList) {
-    deletedTodosList.innerHTML = renderDeletedTodos(recentDeletedTodos);
-  }
-
-  // Render Kept Items List
-  const keptItemsList = document.getElementById('kept-items-list');
-  if (keptItemsList) {
-    keptItemsList.innerHTML = renderKeptItems(keptItems, shareLinks);
-  }
-
-  // Render Deleted Items List
-  const deletedItemsList = document.getElementById('deleted-items-list');
-  if (deletedItemsList) {
-    deletedItemsList.innerHTML = renderDeletedItems(recentDeletedItems);
-  }
-
-  // Render Deleted Progress List
-  const deletedProgressList = document.getElementById('deleted-progress-list');
-  if (deletedProgressList) {
-    deletedProgressList.innerHTML = renderDeletedProgress(initialData.recentDeletedProgress || []);
-  }
-
-  // Event Listeners for Forms
+  // --- FIX 1: Attach form listeners immediately ---
+  // This ensures that even if the API call or rendering fails,
+  // form submissions are still handled by JavaScript, preventing the default browser action.
   const addItemForm = document.getElementById('add-item-form');
   if (addItemForm) {
     addItemForm.addEventListener('submit', async (e) => {
@@ -127,7 +28,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
         if (!response.ok) throw new Error('添加物品失败');
         await refreshDataAndRender();
-        // Clear the form
         e.target.reset();
       } catch (error) {
         console.error("Add item failed:", error);
@@ -137,37 +37,37 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   const transferForm = document.getElementById('transfer-item-form');
-  if(transferForm) {
-      transferForm.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          const itemId = document.getElementById('transfer-item-id').value;
-          const newKeepers = Array.from(transferForm.querySelectorAll('input[name="newKeepers"]:checked')).map(cb => cb.value);
+  if (transferForm) {
+    transferForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const itemId = document.getElementById('transfer-item-id').value;
+      const newKeepers = Array.from(transferForm.querySelectorAll('input[name="newKeepers"]:checked')).map(cb => cb.value);
 
-          if (newKeepers.length === 0) {
-              alert('请至少选择一位新保管人。');
-              return;
-          }
+      if (newKeepers.length === 0) {
+        alert('请至少选择一位新保管人。');
+        return;
+      }
 
-          const formData = new FormData();
-          formData.append('itemId', itemId);
-          newKeepers.forEach(k => formData.append('newKeepers', k));
+      const formData = new FormData();
+      formData.append('itemId', itemId);
+      newKeepers.forEach(k => formData.append('newKeepers', k));
 
-          try {
-              const response = await fetch('/api/transfer_item', {
-                  method: 'POST',
-                  body: formData,
-              });
-              if (!response.ok) {
-                  const errorText = await response.text();
-                  throw new Error('转交失败: ' + errorText);
-              }
-              closeTransferModal();
-              await refreshDataAndRender();
-          } catch (error) {
-              console.error("Transfer failed:", error);
-              alert(error.message);
-          }
-      });
+      try {
+        const response = await fetch('/api/transfer_item', {
+          method: 'POST',
+          body: formData,
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error('转交失败: ' + errorText);
+        }
+        closeTransferModal();
+        await refreshDataAndRender();
+      } catch (error) {
+        console.error("Transfer failed:", error);
+        alert(error.message);
+      }
+    });
   }
 
   const addTodoForm = document.querySelector('form[action="/api/add_todo"]');
@@ -225,19 +125,106 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Finalize UI
-  debugLog('Finalizing UI...');
-  if (window.lucide) {
-    lucide.createIcons();
-  }
-  if (window.refreshFsLightbox) {
-    refreshFsLightbox();
-  }
-  debugLog('UI Finalized.');
+  // --- FIX 2 & 3: Safe initialization and error handling ---
+  try {
+    // Check for external libraries before using them.
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+    if (window.refreshFsLightbox) {
+      refreshFsLightbox();
+    }
 
+    // Fetch initial data
+    initialData = await fetch('/api/data').then(res => res.json());
+    const { allTodos, recentDeletedTodos, keptItems, recentDeletedItems, shareLinks, isRootView } = initialData;
+
+    // Render Todo User Options
+    const todoUserOptionsContainer = document.getElementById('todo-user-options');
+    if (todoUserOptionsContainer) {
+      const userOptionsHtml = Object.values(shareLinks).map(link =>
+        `<label class="flex items-center space-x-2">
+            <input type="checkbox" name="userIds" value="${link.username}" class="rounded border-gray-300 text-blue-600 focus:ring-blue-300">
+            <span>${getDisplayName(link.username)}</span>
+        </label>`
+      ).join('');
+      todoUserOptionsContainer.insertAdjacentHTML('beforeend', userOptionsHtml);
+    }
+
+    // Render Item Keeper Checkboxes
+    const itemKeeperCheckboxesContainer = document.getElementById('item-keeper-checkboxes');
+    if (itemKeeperCheckboxesContainer) {
+      const itemUserOptionsHtml = Object.values(shareLinks).map(link =>
+        `<label class="flex items-center space-x-2">
+            <input type="checkbox" name="itemUserIds" value="${link.username}" class="rounded border-gray-300 text-purple-600 focus:ring-purple-300">
+            <span>${getDisplayName(link.username)}</span>
+        </label>`
+      ).join('');
+      itemKeeperCheckboxesContainer.insertAdjacentHTML('beforeend', itemUserOptionsHtml);
+    }
+
+    // Render Item Todo ID Options
+    const itemTodoIdSelect = document.getElementById('item-todo-id');
+    if (itemTodoIdSelect) {
+      const todoOptionsHtml = allTodos.map(todo => `
+        <option value="${todo.id}">${todo.text} (由 ${getDisplayName(todo.creatorId)} 创建)</option>
+      `).join('');
+      itemTodoIdSelect.insertAdjacentHTML('beforeend', todoOptionsHtml);
+    }
+
+    // Render All Todos List
+    const allTodosList = document.getElementById('all-todos-list');
+    if (allTodosList) {
+      allTodosList.innerHTML = renderAllTodos(allTodos, keptItems, shareLinks);
+    }
+
+    // Render User List
+    const userList = document.getElementById('user-list');
+    const userCount = document.getElementById('user-count');
+    if (userList && userCount) {
+      userList.innerHTML = renderUserList(shareLinks);
+      userCount.textContent = Object.keys(shareLinks).length;
+    }
+
+    // Render Deleted Todos List
+    const deletedTodosList = document.getElementById('deleted-todos-list');
+    if (deletedTodosList) {
+      deletedTodosList.innerHTML = renderDeletedTodos(recentDeletedTodos);
+    }
+
+    // Render Kept Items List
+    const keptItemsList = document.getElementById('kept-items-list');
+    if (keptItemsList) {
+      keptItemsList.innerHTML = renderKeptItems(keptItems, shareLinks);
+    }
+
+    // Render Deleted Items List
+    const deletedItemsList = document.getElementById('deleted-items-list');
+    if (deletedItemsList) {
+      deletedItemsList.innerHTML = renderDeletedItems(recentDeletedItems);
+    }
+
+    // Render Deleted Progress List
+    const deletedProgressList = document.getElementById('deleted-progress-list');
+    if (deletedProgressList) {
+      deletedProgressList.innerHTML = renderDeletedProgress(initialData.recentDeletedProgress || []);
+    }
+
+    // Finalize UI
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+    if (window.refreshFsLightbox) {
+      refreshFsLightbox();
+    }
   } catch (error) {
-    debugLog(`An error occurred: ${error.message}`);
-    console.error(error);
+    console.error('Failed to initialize page:', error);
+    // Optionally, display a user-friendly error message on the page
+    const errorDisplay = document.getElementById('error-display'); // Assuming you add an element with this ID
+    if (errorDisplay) {
+        errorDisplay.textContent = '页面加载失败。请检查您的网络连接并刷新页面。如果问题持续，请联系管理员。';
+        errorDisplay.style.display = 'block';
+    }
   }
 });
 
@@ -283,8 +270,12 @@ async function refreshDataAndRender() {
     }
 
     // 3. Re-initialize icons and lightboxes
-    lucide.createIcons();
-    refreshFsLightbox();
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+    if (window.refreshFsLightbox) {
+      refreshFsLightbox();
+    }
 
   } catch (error) {
     console.error("Failed to refresh data and render:", error);
@@ -944,7 +935,9 @@ function toggleKeptItems(button) {
   } else {
     icon.outerHTML = '<i data-lucide="chevron-up" class="w-4 h-4"></i>';
   }
-  lucide.createIcons();
+  if (window.lucide) {
+    lucide.createIcons();
+  }
 }
 
 function toggleTodoDetails(button, todoId) {
@@ -956,7 +949,9 @@ function toggleTodoDetails(button, todoId) {
   } else {
     button.innerHTML = '<i data-lucide="chevron-down"></i>';
   }
-  lucide.createIcons();
+  if (window.lucide) {
+    lucide.createIcons();
+  }
 }
 
 function showAddProgressForm(todoId) {
@@ -970,7 +965,9 @@ function showAddProgressForm(todoId) {
 
     details.classList.remove('hidden');
     toggleButton.innerHTML = '<i data-lucide="chevron-down"></i>';
-    lucide.createIcons();
+    if (window.lucide) {
+      lucide.createIcons();
+    }
   }
 
   // Then, always toggle the form's visibility.
