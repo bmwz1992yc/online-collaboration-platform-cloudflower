@@ -1,5 +1,25 @@
 let initialData; // Declare initialData globally
 
+// --- NEW HELPER FUNCTION ---
+async function fetchDataWithRetries(retries = 3, delay = 500) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch('/api/data');
+      if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error(`Fetch attempt ${i + 1} failed:`, error);
+      if (i < retries - 1) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        throw error;
+      }
+    }
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   // --- FIX 1: Attach form listeners immediately ---
   // This ensures that even if the API call or rendering fails,
@@ -127,16 +147,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // --- FIX 2 & 3: Safe initialization and error handling ---
   try {
-    // Check for external libraries before using them.
-    if (window.lucide) {
-      lucide.createIcons();
-    }
-    if (window.refreshFsLightbox) {
-      refreshFsLightbox();
-    }
-
-    // Fetch initial data
-    initialData = await fetch('/api/data').then(res => res.json());
+    // Fetch initial data using the new resilient function
+    initialData = await fetchDataWithRetries();
     const { allTodos, recentDeletedTodos, keptItems, recentDeletedItems, shareLinks, isRootView } = initialData;
 
     // Render Todo User Options
@@ -211,12 +223,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Finalize UI
-    if (window.lucide) {
-      lucide.createIcons();
-    }
-    if (window.refreshFsLightbox) {
-      refreshFsLightbox();
-    }
+    initializeIconsWhenReady();
+    initializeLightboxWhenReady();
   } catch (error) {
     console.error('Failed to initialize page:', error);
     // Optionally, display a user-friendly error message on the page
@@ -224,15 +232,51 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (errorDisplay) {
         errorDisplay.textContent = '页面加载失败。请检查您的网络连接并刷新页面。如果问题持续，请联系管理员。';
         errorDisplay.style.display = 'block';
+    } else {
+        alert('页面加载关键数据失败，请尝试刷新。');
     }
   }
 });
 
+// --- NEW HELPER FUNCTION for robust icon loading ---
+function initializeIconsWhenReady(retries = 20, delay = 100) {
+  const intervalId = setInterval(() => {
+    // Check if lucide and its internal 'icons' object are ready
+    if (window.lucide && typeof window.lucide.icons === 'object' && Object.keys(window.lucide.icons).length > 0) {
+      lucide.createIcons();
+      clearInterval(intervalId); // Stop polling once successful
+    } else {
+      retries--;
+      if (retries <= 0) {
+        clearInterval(intervalId); // Stop polling after too many attempts
+        console.error("Lucide library failed to initialize in time.");
+      }
+    }
+  }, delay);
+}
+
+function initializeLightboxWhenReady(retries = 20, delay = 100) {
+  const intervalId = setInterval(() => {
+    // Check if the lightbox refresh function is available
+    if (typeof window.refreshFsLightbox === 'function') {
+      refreshFsLightbox();
+      clearInterval(intervalId); // Stop polling once successful
+    } else {
+      retries--;
+      if (retries <= 0) {
+        clearInterval(intervalId); // Stop polling after too many attempts
+        console.error("FsLightbox library failed to initialize in time.");
+      }
+    }
+  }, delay);
+}
+
+
 // Helper functions (moved from backend)
 async function refreshDataAndRender() {
   try {
-    // 1. Fetch latest data
-    const newData = await fetch('/api/data').then(res => res.json());
+    // 1. Fetch latest data using the new resilient function
+    const newData = await fetchDataWithRetries();
     initialData = newData; // Update global data object
     const { allTodos, recentDeletedTodos, keptItems, recentDeletedItems, shareLinks } = newData;
 
@@ -270,12 +314,8 @@ async function refreshDataAndRender() {
     }
 
     // 3. Re-initialize icons and lightboxes
-    if (window.lucide) {
-      lucide.createIcons();
-    }
-    if (window.refreshFsLightbox) {
-      refreshFsLightbox();
-    }
+    initializeIconsWhenReady();
+    initializeLightboxWhenReady();
 
   } catch (error) {
     console.error("Failed to refresh data and render:", error);
@@ -935,9 +975,7 @@ function toggleKeptItems(button) {
   } else {
     icon.outerHTML = '<i data-lucide="chevron-up" class="w-4 h-4"></i>';
   }
-  if (window.lucide) {
-    lucide.createIcons();
-  }
+  initializeIconsWhenReady();
 }
 
 function toggleTodoDetails(button, todoId) {
@@ -949,9 +987,7 @@ function toggleTodoDetails(button, todoId) {
   } else {
     button.innerHTML = '<i data-lucide="chevron-down"></i>';
   }
-  if (window.lucide) {
-    lucide.createIcons();
-  }
+  initializeIconsWhenReady();
 }
 
 function showAddProgressForm(todoId) {
@@ -965,9 +1001,7 @@ function showAddProgressForm(todoId) {
 
     details.classList.remove('hidden');
     toggleButton.innerHTML = '<i data-lucide="chevron-down"></i>';
-    if (window.lucide) {
-      lucide.createIcons();
-    }
+    initializeIconsWhenReady();
   }
 
   // Then, always toggle the form's visibility.
