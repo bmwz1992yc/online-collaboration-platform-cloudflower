@@ -1,8 +1,18 @@
 let initialData; // Declare initialData globally
 
 document.addEventListener('DOMContentLoaded', async () => {
-  lucide.createIcons();
-  refreshFsLightbox();
+  console.log('DOM fully loaded and parsed');
+  try {
+    if (window.lucide) {
+      lucide.createIcons();
+      console.log('Lucide icons created on DOM load');
+    } else {
+      console.warn('Lucide library not available on DOM load.');
+    }
+    refreshFsLightbox();
+  } catch (error) {
+    console.error("Error during initial setup:", error);
+  }
 
   // Fetch initial data
   initialData = await fetch('/api/data').then(res => res.json());
@@ -203,7 +213,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Finalize UI
-  lucide.createIcons();
+  if (window.lucide) {
+    lucide.createIcons();
+  }
   refreshFsLightbox();
 });
 
@@ -249,7 +261,9 @@ async function refreshDataAndRender() {
     }
 
     // 3. Re-initialize icons and lightboxes
-    lucide.createIcons();
+    if (window.lucide) {
+      lucide.createIcons();
+    }
     refreshFsLightbox();
 
   } catch (error) {
@@ -910,7 +924,9 @@ function toggleKeptItems(button) {
   } else {
     icon.outerHTML = '<i data-lucide="chevron-up" class="w-4 h-4"></i>';
   }
-  lucide.createIcons();
+  if (window.lucide) {
+    lucide.createIcons();
+  }
 }
 
 function toggleTodoDetails(button, todoId) {
@@ -922,7 +938,9 @@ function toggleTodoDetails(button, todoId) {
   } else {
     button.innerHTML = '<i data-lucide="chevron-down"></i>';
   }
-  lucide.createIcons();
+  if (window.lucide) {
+    lucide.createIcons();
+  }
 }
 
 function showAddProgressForm(todoId) {
