@@ -472,13 +472,21 @@ async function saveDeletedProgress(env, progress) {
 async function getAllUsersTodos(env) {
   const listResponse = await env.R2_BUCKET.list({ prefix: 'todos:' });
   const keys = listResponse.objects.map(k => k.key);
-  
-  let allTodos = [];
-  for (const key of keys) {
-    const ownerId = key.substring(6);
-    const userTodos = await loadTodos(env, key);
-    allTodos.push(...userTodos.map(todo => ({ ...todo, ownerId: ownerId })));
+
+  if (keys.length === 0) {
+    return [];
   }
+  
+  const allUserTodosPromises = keys.map(key => loadTodos(env, key));
+  const allUserTodosArrays = await Promise.all(allUserTodosPromises);
+
+  let allTodos = [];
+  allUserTodosArrays.forEach((userTodos, index) => {
+    const key = keys[index];
+    const ownerId = key.substring(6);
+    allTodos.push(...userTodos.map(todo => ({ ...todo, ownerId: ownerId })));
+  });
+
   allTodos.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   return allTodos;
 }
@@ -978,31 +986,43 @@ async function handleRestoreItem(request, env) {
   }
 }
 
-async function handleApiData(request, env) {
+async function handleApiData(context) {
+  const { request, env } = context;
   const url = new URL(request.url);
-  const shareLinks = await loadShareLinks(env);
-  const isRootView = url.pathname === '/api/data'; // Adjust for API path
-  
-  const allTodos = await getAllUsersTodos(env);
-  let deletedTodos = await loadDeletedTodos(env);
+  const isRootView = url.pathname === '/api/data';
 
+  // Parallelize all data loading from R2
+  const [
+    shareLinks,
+    allTodos,
+    deletedTodos,
+    keptItems,
+    deletedItems,
+    deletedProgress
+  ] = await Promise.all([
+    loadShareLinks(env),
+    getAllUsersTodos(env),
+    loadDeletedTodos(env),
+    loadKeptItems(env),
+    loadDeletedItems(env),
+    loadDeletedProgress(env)
+  ]);
+
+  // Filter out old deleted items
   const twentyDaysAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
   const recentDeletedTodos = deletedTodos.filter(todo => new Date(todo.deletedAt) > twentyDaysAgo);
-  if (recentDeletedTodos.length < deletedTodos.length) {
-    await saveDeletedTodos(env, recentDeletedTodos);
-  }
-
-  const keptItems = await loadKeptItems(env);
-  let deletedItems = await loadDeletedItems(env);
   const recentDeletedItems = deletedItems.filter(item => new Date(item.deletedAt) > twentyDaysAgo);
-  if (recentDeletedItems.length < deletedItems.length) {
-    await saveDeletedItems(env, recentDeletedItems);
-  }
-
-  let deletedProgress = await loadDeletedProgress(env);
   const recentDeletedProgress = deletedProgress.filter(p => new Date(p.deletedAt) > twentyDaysAgo);
+
+  // Defer the cleanup (saving the filtered lists back to R2) to not block the response
+  if (recentDeletedTodos.length < deletedTodos.length) {
+    context.waitUntil(saveDeletedTodos(env, recentDeletedTodos));
+  }
+  if (recentDeletedItems.length < deletedItems.length) {
+    context.waitUntil(saveDeletedItems(env, recentDeletedItems));
+  }
   if (recentDeletedProgress.length < deletedProgress.length) {
-    await saveDeletedProgress(env, recentDeletedProgress);
+    context.waitUntil(saveDeletedProgress(env, recentDeletedProgress));
   }
 
   return new Response(JSON.stringify({
@@ -1051,7 +1071,7 @@ export async function onRequest(context) {
   // Handle API routes
   switch (path) {
     case '/data':
-      return handleApiData(request, env);
+      return handleApiData(context);
     case '/add_todo':
       return handleAddTodo(request, env);
     case '/update_todo':

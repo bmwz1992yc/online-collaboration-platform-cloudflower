@@ -113,7 +113,17 @@ document.addEventListener('DOMContentLoaded', async () => {
           body: formData,
         });
         if (!response.ok) throw new Error('添加物品失败');
-        await refreshDataAndRender();
+        const { item } = await response.json();
+
+        // Optimistic UI update
+        initialData.keptItems.push(item);
+        const keptItemsList = document.getElementById('kept-items-list');
+        if (keptItemsList.querySelector('p')) { // Empty state
+            keptItemsList.innerHTML = '';
+        }
+        keptItemsList.insertAdjacentHTML('afterbegin', renderKeptItems([item], initialData.shareLinks));
+        if (window.lucide) lucide.createIcons();
+
         // Clear the form
         e.target.reset();
       } catch (error) {
@@ -180,7 +190,17 @@ document.addEventListener('DOMContentLoaded', async () => {
           body: formData,
         });
         if (!response.ok) throw new Error('添加事项失败');
-        await refreshDataAndRender();
+        const { todo } = await response.json();
+
+        // Optimistic UI update
+        initialData.allTodos.push(todo);
+        const allTodosList = document.getElementById('all-todos-list');
+        if (allTodosList.querySelector('p')) { // Empty state
+            allTodosList.innerHTML = '';
+        }
+        allTodosList.insertAdjacentHTML('afterbegin', renderAllTodos([todo], initialData.keptItems, initialData.shareLinks));
+        if (window.lucide) lucide.createIcons();
+
         e.target.reset();
       } catch (error) {
         console.error("Add todo failed:", error);
@@ -203,7 +223,15 @@ document.addEventListener('DOMContentLoaded', async () => {
           body: formData,
         });
         if (!response.ok) throw new Error('创建用户失败');
-        await refreshDataAndRender();
+        const { token, username } = await response.json();
+
+        // Optimistic UI update
+        initialData.shareLinks[token] = { username };
+        const userList = document.getElementById('user-list');
+        const userCount = document.getElementById('user-count');
+        userList.innerHTML = renderUserList(initialData.shareLinks);
+        userCount.textContent = Object.keys(initialData.shareLinks).length;
+
         e.target.reset();
       } catch (error) {
         console.error("Add user failed:", error);
