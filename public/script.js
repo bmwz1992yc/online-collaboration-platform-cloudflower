@@ -339,7 +339,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     lucide.createIcons();
   }
   refreshFsLightbox();
+
+  const allTodosListEl = document.getElementById('all-todos-list');
+  if (allTodosListEl) {
+    new Sortable(allTodosListEl, {
+      animation: 150,
+      handle: '.flex-grow', // Drag handle
+      onEnd: function (evt) {
+        const todoId = evt.item.getAttribute('data-id');
+        const newIndex = evt.newIndex;
+        updateTodoOrder(todoId, newIndex);
+      },
+    });
+  }
 });
+
+function toggleDeletedItems(button) {
+  const container = document.getElementById('deleted-items-container');
+  const isHidden = container.classList.toggle('hidden');
+  const icon = button.querySelector('i[data-lucide]');
+
+  if (isHidden) {
+    icon.outerHTML = '<i data-lucide="chevron-down" class="w-5 h-5"></i>';
+  } else {
+    icon.outerHTML = '<i data-lucide="chevron-up" class="w-5 h-5"></i>';
+  }
+  if (window.lucide) {
+    lucide.createIcons();
+  }
+}
 
 // Helper functions (moved from backend)
 async function refreshDataAndRender() {
@@ -421,6 +449,9 @@ function renderAllTodos(allTodos, keptItems, users) {
   allTodos.sort((a, b) => {
     if (a.completed && !b.completed) return 1;
     if (!a.completed && b.completed) return -1;
+    if (a.order !== undefined && b.order !== undefined) {
+      return a.order - b.order;
+    }
     return new Date(b.createdAt) - new Date(a.createdAt);
   });
 
@@ -502,7 +533,7 @@ function renderAllTodos(allTodos, keptItems, users) {
       activityLogHtml = `
         <div class="mt-4 pt-2 border-t border-gray-200">
           <details>
-            <summary class="cursor-pointer text-sm font-semibold text-gray-600">操作历史</summary>
+            <summary class="cursor-pointer text-xs font-semibold text-gray-600">操作历史</summary>
             <ul class="mt-2 pl-5 text-xs text-gray-500 list-disc space-y-1">
               ${todo.activityLog.slice().reverse().map(formatActivity).join('')}
             </ul>
@@ -1116,6 +1147,9 @@ function showAddProgressForm(todoId) {
 }
 
 function renderProgress(progress) {
+  // Sort progress by creation date, newest first
+  progress.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
   return progress.map(p => {
     let attachmentsHtml = '';
     const attachments = p.attachmentUrls || p.imageUrls; // Check for new and old properties
@@ -1297,6 +1331,24 @@ async function restoreProgress(id) {
   } catch (error) {
     console.error("Restore progress failed:", error);
     alert('还原进度失败，请重试。');
+  }
+}
+
+async function updateTodoOrder(todoId, newIndex) {
+  try {
+    const response = await fetch('/api/update_todo_order', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getCookie('sessionId')}`
+      },
+      body: JSON.stringify({ todoId, newIndex }),
+    });
+    if (!response.ok) throw new Error('更新待办事项顺序失败');
+    await refreshDataAndRender();
+  } catch (error) {
+    console.error("Update todo order failed:", error);
+    alert('更新待办事项顺序失败，请重试。');
   }
 }
 

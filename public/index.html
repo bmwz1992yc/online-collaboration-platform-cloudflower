@@ -7,6 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/fslightbox@3.4.1/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
   <link rel="stylesheet" href="/styles.css">
   <style>
     body {
@@ -154,21 +155,26 @@
 
     <!-- 最近删除 -->
     <section class="card p-6">
-      <div class="flex items-center gap-2 mb-4">
-        <i data-lucide="trash-2" class="w-6 h-6 text-red-500"></i>
-        <h2 class="text-xl font-semibold text-gray-800">最近删除 (20天内)</h2>
+      <button class="flex items-center justify-between w-full text-left" onclick="toggleDeletedItems(this)">
+        <div class="flex items-center gap-2">
+          <i data-lucide="trash-2" class="w-6 h-6 text-red-500"></i>
+          <h2 class="text-xl font-semibold text-gray-800">最近删除 (20天内)</h2>
+        </div>
+        <i data-lucide="chevron-down" class="w-5 h-5"></i>
+      </button>
+      <div id="deleted-items-container" class="hidden mt-4">
+        <ul id="deleted-todos-list" class="space-y-3 text-sm text-gray-500">
+          <p class="text-center py-10">无已删除事项。</p>
+        </ul>
+        <h3 class="text-lg font-semibold mt-4 mb-2 text-gray-700">已删除物品</h3>
+        <ul id="deleted-items-list" class="space-y-3 text-sm text-gray-500">
+          <p class="text-center py-4">无已删除物品。</p>
+        </ul>
+        <h3 class="text-lg font-semibold mt-4 mb-2 text-gray-700">已删除进度</h3>
+        <ul id="deleted-progress-list" class="space-y-3 text-sm text-gray-500">
+          <p class="text-center py-4">无已删除进度。</p>
+        </ul>
       </div>
-      <ul id="deleted-todos-list" class="space-y-3 text-sm text-gray-500">
-        <p class="text-center py-10">无已删除事项。</p>
-      </ul>
-      <h3 class="text-lg font-semibold mt-4 mb-2 text-gray-700">已删除物品</h3>
-      <ul id="deleted-items-list" class="space-y-3 text-sm text-gray-500">
-        <p class="text-center py-4">无已删除物品。</p>
-      </ul>
-      <h3 class="text-lg font-semibold mt-4 mb-2 text-gray-700">已删除进度</h3>
-      <ul id="deleted-progress-list" class="space-y-3 text-sm text-gray-500">
-        <p class="text-center py-4">无已删除进度。</p>
-      </ul>
     </section>
 
   </div>
