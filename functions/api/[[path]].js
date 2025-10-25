@@ -513,9 +513,54 @@ async function getAllUsersTodos(env) {
     allTodos.push(...userTodos.map(todo => ({ ...todo, ownerId: ownerId })));
   });
 
-  allTodos.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  allTodos.sort((a, b) => {
+    if (a.order !== undefined && b.order !== undefined) {
+      return a.order - b.order;
+    }
+    return new Date(b.createdAt) - new Date(a.createdAt);
+  });
   return allTodos;
 }
+
+async function handleUpdateTodoOrder(request, env) {
+  const { todoId, newIndex } = await request.json();
+  if (!todoId || newIndex === undefined) {
+    return new Response(JSON.stringify({ error: "Missing 'todoId' or 'newIndex'" }), { status: 400 });
+  }
+
+  const sessionId = getSessionId(request);
+  const session = await getSession(env, sessionId);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+  }
+
+  const allTodos = await getAllUsersTodos(env);
+  const targetTodo = allTodos.find(t => t.id === todoId);
+  if (!targetTodo) {
+    return new Response(JSON.stringify({ error: "Todo not found" }), { status: 404 });
+  }
+
+  const ownerId = targetTodo.ownerId;
+  const kvKey = getKvKey(ownerId);
+  const todos = await loadTodos(env, kvKey);
+
+  const oldIndex = todos.findIndex(t => t.id === todoId);
+  if (oldIndex === -1) {
+    return new Response(JSON.stringify({ error: "Todo not found in user's list" }), { status: 404 });
+  }
+
+  const [movedTodo] = todos.splice(oldIndex, 1);
+  todos.splice(newIndex, 0, movedTodo);
+
+  for (let i = 0; i < todos.length; i++) {
+    todos[i].order = i;
+  }
+
+  await saveTodos(env, kvKey, todos);
+
+  return new Response(JSON.stringify({ success: true }), { status: 200 });
+}
+
 
 // --- API 逻辑处理器 ---
 
@@ -1158,6 +1203,8 @@ export async function onRequest(context) {
       return handleDeleteProgress(request, env);
     case '/restore_progress':
       return handleRestoreProgress(request, env);
+    case '/update_todo_order':
+        return handleUpdateTodoOrder(request, env);
     case '/migrate-r2-keys':
       return handleMigrateR2Keys(request, env);
     default:
