@@ -412,8 +412,18 @@ async function saveTodos(env, key, todos) {
 
 async function loadUsers(env) {
   try {
-    const r2Object = await env.R2_BUCKET.get(USERS_KEY);
-    if (r2Object === null) return {};
+    let r2Object = await env.R2_BUCKET.get(USERS_KEY);
+    if (r2Object === null) {
+      const defaultUsers = {
+        "admin": {
+          "username": "admin",
+          "password": await hashPassword("admin_password"),
+          "role": "admin"
+        }
+      };
+      await env.R2_BUCKET.put(USERS_KEY, JSON.stringify(defaultUsers));
+      r2Object = await env.R2_BUCKET.get(USERS_KEY);
+    }
     return await r2Object.json();
   } catch (error) {
     console.error("Error loading users:", error);
@@ -540,10 +550,7 @@ async function handleLogin(request, env) {
 
   const hashedPassword = await hashPassword(password);
   if (user.password !== hashedPassword) {
-    // In a real app, you would hash the stored password as well
-    if (user.password !== password) {
-       return new Response(JSON.stringify({ error: "Invalid password" }), { status: 401 });
-    }
+    return new Response(JSON.stringify({ error: "Invalid password" }), { status: 401 });
   }
 
   const sessionId = await createSession(env, user);
@@ -728,7 +735,7 @@ async function handleCreateUser(request, env) {
     
     users[newToken] = {
         username: username,
-        password: 'password', // Default password
+        password: await hashPassword('password'), // Default password
         role: 'user'
     };
     
@@ -1031,6 +1038,12 @@ async function handleRestoreItem(request, env) {
 
 async function handleApiData(context) {
   const { request, env } = context;
+  const sessionId = getSessionId(request);
+  const session = await getSession(env, sessionId);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+  }
+
   const url = new URL(request.url);
   const isRootView = url.pathname === '/api/data';
 

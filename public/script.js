@@ -82,9 +82,32 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Fetch initial data
   const sessionId = getCookie('sessionId');
-  initialData = await fetch('/api/data', {
+  if (!sessionId) {
+    const path = window.location.pathname;
+    if (path === '/') {
+      window.location.href = '/login.html';
+    } else {
+      window.location.href = '/password.html';
+    }
+    return;
+  }
+
+  const response = await fetch('/api/data', {
     headers: { 'Authorization': `Bearer ${sessionId}` }
-  }).then(res => res.json());
+  });
+
+  if (!response.ok) {
+    setCookie('sessionId', '', -1); // Clear the invalid cookie
+    const path = window.location.pathname;
+    if (path === '/') {
+      window.location.href = '/login.html';
+    } else {
+      window.location.href = '/password.html';
+    }
+    return;
+  }
+
+  initialData = await response.json();
   const { allTodos, recentDeletedTodos, keptItems, recentDeletedItems, users, isRootView } = initialData;
 
   // Render Todo User Options
@@ -297,7 +320,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const { token, username } = await response.json();
 
         // Optimistic UI update
-        initialData.users[token] = { username };
+        initialData.users[token] = { username, password: 'password', role: 'user' };
         const userList = document.getElementById('user-list');
         const userCount = document.getElementById('user-count');
         userList.innerHTML = renderUserList(initialData.users);
