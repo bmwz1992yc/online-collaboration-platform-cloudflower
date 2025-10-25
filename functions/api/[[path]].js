@@ -1,12 +1,12 @@
 // ⚠️ 重要提示：此 Worker 需要绑定一个名为 R2_BUCKET 的 R2 存储桶。
 // 如果未绑定 R2 存储桶，Worker 将无法正常工作。
 
-const USERS_KEY = 'system:users';
-const SESSIONS_KEY_PREFIX = 'system:sessions:';
-const DELETED_TODOS_KEY = 'system:deleted_todos';
-const KEPT_ITEMS_KEY = 'system:kept_items'; // 新增物品保管的 R2 键
-const DELETED_ITEMS_KEY = 'system:deleted_items'; // 新增已删除物品的 R2 键
-const DELETED_PROGRESS_KEY = 'system:deleted_progress'; // 新增已删除进度的 R2 键
+const USERS_KEY = 'system-users.json';
+const SESSIONS_KEY_PREFIX = 'system-sessions-';
+const DELETED_TODOS_KEY = 'system-deleted_todos.json';
+const KEPT_ITEMS_KEY = 'system-kept_items.json'; // 新增物品保管的 R2 键
+const DELETED_ITEMS_KEY = 'system-deleted_items.json'; // 新增已删除物品的 R2 键
+const DELETED_PROGRESS_KEY = 'system-deleted_progress.json'; // 新增已删除进度的 R2 键
 
 // --- Session Management ---
 
@@ -39,14 +39,7 @@ async function deleteSession(env, sessionId) {
 
 // --- 辅助函数 ---
 
-async function hashPassword(password) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-const getKvKey = (userId) => `todos:${userId}`;
+const getKvKey = (userId) => `todos-${userId}.json`;
 
 function getDisplayName(userId) {
   if (userId === 'admin') return 'yc';
@@ -418,7 +411,7 @@ async function loadUsers(env) {
       const defaultUsers = {
         "admin": {
           "username": "admin",
-          "password": await hashPassword("112233"),
+          "password": "112233",
           "role": "admin"
         }
       };
@@ -503,7 +496,7 @@ async function saveDeletedProgress(env, progress) {
 }
 
 async function getAllUsersTodos(env) {
-  const listResponse = await env.R2_BUCKET.list({ prefix: 'todos:' });
+  const listResponse = await env.R2_BUCKET.list({ prefix: 'todos-' });
   const keys = listResponse.objects.map(k => k.key);
 
   if (keys.length === 0) {
@@ -516,7 +509,7 @@ async function getAllUsersTodos(env) {
   let allTodos = [];
   allUserTodosArrays.forEach((userTodos, index) => {
     const key = keys[index];
-    const ownerId = key.substring(6);
+    const ownerId = key.substring(6, key.length - 5); // "todos-" is 6 chars, ".json" is 5
     allTodos.push(...userTodos.map(todo => ({ ...todo, ownerId: ownerId })));
   });
 
@@ -550,8 +543,7 @@ async function handleLogin(request, env) {
     return new Response(JSON.stringify({ error: "User not found" }), { status: 404 });
   }
 
-  const hashedPassword = await hashPassword(password);
-  if (user.password !== hashedPassword) {
+  if (user.password !== password) {
     return new Response(JSON.stringify({ error: "Invalid password" }), { status: 401 });
   }
 
@@ -737,7 +729,7 @@ async function handleCreateUser(request, env) {
     
     users[newToken] = {
         username: username,
-        password: await hashPassword('112233'), // Default password
+        password: '112233', // Default password
         role: 'user'
     };
     
@@ -1166,7 +1158,35 @@ export async function onRequest(context) {
       return handleDeleteProgress(request, env);
     case '/restore_progress':
       return handleRestoreProgress(request, env);
+    case '/migrate-r2-keys':
+      return handleMigrateR2Keys(request, env);
     default:
       return new Response('API Not Found', { status: 404 });
   }
+}
+
+async function handleMigrateR2Keys(request, env) {
+  const listResponse = await env.R2_BUCKET.list();
+  const objects = listResponse.objects;
+
+  for (const object of objects) {
+    const oldKey = object.key;
+    if (oldKey.includes(':') && !oldKey.endsWith('.json')) {
+      const newKey = oldKey.replace(/:/g, '-') + '.json';
+      const r2Object = await env.R2_BUCKET.get(oldKey);
+      if (r2Object) {
+        await env.R2_BUCKET.put(newKey, await r2Object.arrayBuffer());
+        await env.R2_BUCKET.delete(oldKey);
+      }
+    }
+  }
+
+  // Update admin password to plaintext
+  const users = await loadUsers(env);
+  if (users.admin) {
+    users.admin.password = '112233';
+    await saveUsers(env, users);
+  }
+
+  return new Response('R2 key migration and admin password update complete.', { status: 200 });
 }
