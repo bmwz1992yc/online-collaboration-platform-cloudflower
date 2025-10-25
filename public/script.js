@@ -338,21 +338,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (window.lucide) {
     lucide.createIcons();
   }
-}
-
-function toggleDeletedItems(button) {
-  const container = document.getElementById('deleted-items-container');
-  const isHidden = container.classList.toggle('hidden');
-  const icon = button.querySelector('i[data-lucide]');
-
-  if (isHidden) {
-    icon.outerHTML = '<i data-lucide="chevron-down" class="w-5 h-5"></i>';
-  } else {
-    icon.outerHTML = '<i data-lucide="chevron-up" class="w-5 h-5"></i>';
-  }
-  if (window.lucide) {
-    lucide.createIcons();
-  }
   refreshFsLightbox();
 
   const allTodosListEl = document.getElementById('all-todos-list');
@@ -368,6 +353,21 @@ function toggleDeletedItems(button) {
     });
   }
 });
+
+function toggleDeletedItems(button) {
+  const container = document.getElementById('deleted-items-container');
+  const isHidden = container.classList.toggle('hidden');
+  const icon = button.querySelector('i[data-lucide]');
+
+  if (isHidden) {
+    icon.outerHTML = '<i data-lucide="chevron-down" class="w-5 h-5"></i>';
+  } else {
+    icon.outerHTML = '<i data-lucide="chevron-up" class="w-5 h-5"></i>';
+  }
+  if (window.lucide) {
+    lucide.createIcons();
+  }
+}
 
 // Helper functions (moved from backend)
 async function refreshDataAndRender() {
