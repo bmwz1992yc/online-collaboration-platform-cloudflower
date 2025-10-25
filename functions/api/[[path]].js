@@ -412,22 +412,24 @@ async function saveTodos(env, key, todos) {
 
 async function loadUsers(env) {
   try {
-    let r2Object = await env.R2_BUCKET.get(USERS_KEY);
+    const r2Object = await env.R2_BUCKET.get(USERS_KEY);
     if (r2Object === null) {
+      console.log("No users found, creating default admin user...");
       const defaultUsers = {
         "admin": {
           "username": "admin",
-          "password": await hashPassword("admin_password"),
+          "password": await hashPassword("112233"),
           "role": "admin"
         }
       };
       await env.R2_BUCKET.put(USERS_KEY, JSON.stringify(defaultUsers));
-      r2Object = await env.R2_BUCKET.get(USERS_KEY);
+      console.log("Default admin user created successfully.");
+      return defaultUsers;
     }
     return await r2Object.json();
   } catch (error) {
     console.error("Error loading users:", error);
-    if (env.DEBUG) throw error; // Re-throw for debugging
+    if (env.DEBUG) throw error;
     return {};
   }
 }
@@ -538,7 +540,7 @@ async function handleLogin(request, env) {
     user = users[token];
   } else if (username) {
     const lowerCaseUsername = username.toLowerCase();
-    const userEntry = Object.entries(users).find(([_, u]) => u.username.toLowerCase() === lowerCaseUsername);
+    const userEntry = Object.entries(users).find(([_, u])]) => u.username.toLowerCase() === lowerCaseUsername);
     if (userEntry) {
       user = userEntry[1];
     }
@@ -735,7 +737,7 @@ async function handleCreateUser(request, env) {
     
     users[newToken] = {
         username: username,
-        password: await hashPassword('password'), // Default password
+        password: await hashPassword('112233'), // Default password
         role: 'user'
     };
     
