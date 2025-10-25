@@ -1,7 +1,73 @@
 let initialData; // Declare initialData globally
 
+function setCookie(name, value, days) {
+  let expires = "";
+  if (days) {
+    const date = new Date();
+    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+    expires = "; expires=" + date.toUTCString();
+  }
+  document.cookie = name + "=" + (value || "") + expires + "; path=/";
+}
+
+function getCookie(name) {
+  const nameEQ = name + "=";
+  const ca = document.cookie.split(';');
+  for (let i = 0; i < ca.length; i++) {
+    let c = ca[i];
+    while (c.charAt(0) == ' ') c = c.substring(1, c.length);
+    if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length, c.length);
+  }
+  return null;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('DOM fully loaded and parsed');
+
+  const loginForm = document.getElementById('login-form');
+  if (loginForm) {
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      if (response.ok) {
+        const { sessionId } = await response.json();
+        setCookie('sessionId', sessionId, 7);
+        window.location.href = '/';
+      } else {
+        alert('Login failed');
+      }
+    });
+    return;
+  }
+
+  const passwordForm = document.getElementById('password-form');
+  if (passwordForm) {
+    passwordForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = window.location.pathname.substring(1);
+      const password = document.getElementById('password').value;
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, password }),
+      });
+      if (response.ok) {
+        const { sessionId } = await response.json();
+        setCookie('sessionId', sessionId, 7);
+        window.location.href = '/';
+      } else {
+        alert('Login failed');
+      }
+    });
+    return;
+  }
+
   try {
     if (window.lucide) {
       lucide.createIcons();
@@ -15,16 +81,42 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Fetch initial data
-  initialData = await fetch('/api/data').then(res => res.json());
-  const { allTodos, recentDeletedTodos, keptItems, recentDeletedItems, shareLinks, isRootView } = initialData;
+  const sessionId = getCookie('sessionId');
+  if (!sessionId) {
+    const path = window.location.pathname;
+    if (path === '/') {
+      window.location.href = '/login.html';
+    } else {
+      window.location.href = '/password.html';
+    }
+    return;
+  }
+
+  const response = await fetch('/api/data', {
+    headers: { 'Authorization': `Bearer ${sessionId}` }
+  });
+
+  if (!response.ok) {
+    setCookie('sessionId', '', -1); // Clear the invalid cookie
+    const path = window.location.pathname;
+    if (path === '/') {
+      window.location.href = '/login.html';
+    } else {
+      window.location.href = '/password.html';
+    }
+    return;
+  }
+
+  initialData = await response.json();
+  const { allTodos, recentDeletedTodos, keptItems, recentDeletedItems, users, isRootView } = initialData;
 
   // Render Todo User Options
   const todoUserOptionsContainer = document.getElementById('todo-user-options');
   if (todoUserOptionsContainer) {
-    const userOptionsHtml = Object.values(shareLinks).map(link => 
+    const userOptionsHtml = Object.values(users).map(user =>
       `<label class="flex items-center space-x-2">
-          <input type="checkbox" name="userIds" value="${link.username}" class="rounded border-gray-300 text-blue-600 focus:ring-blue-300">
-          <span>${getDisplayName(link.username)}</span>
+          <input type="checkbox" name="userIds" value="${user.username}" class="rounded border-gray-300 text-blue-600 focus:ring-blue-300">
+          <span>${getDisplayName(user.username)}</span>
       </label>`
     ).join('');
     todoUserOptionsContainer.insertAdjacentHTML('beforeend', userOptionsHtml);
@@ -33,10 +125,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Render Item Keeper Checkboxes
   const itemKeeperCheckboxesContainer = document.getElementById('item-keeper-checkboxes');
   if (itemKeeperCheckboxesContainer) {
-    const itemUserOptionsHtml = Object.values(shareLinks).map(link => 
+    const itemUserOptionsHtml = Object.values(users).map(user =>
       `<label class="flex items-center space-x-2">
-          <input type="checkbox" name="itemUserIds" value="${link.username}" class="rounded border-gray-300 text-purple-600 focus:ring-purple-300">
-          <span>${getDisplayName(link.username)}</span>
+          <input type="checkbox" name="itemUserIds" value="${user.username}" class="rounded border-gray-300 text-purple-600 focus:ring-purple-300">
+          <span>${getDisplayName(user.username)}</span>
       </label>`
     ).join('');
     itemKeeperCheckboxesContainer.insertAdjacentHTML('beforeend', itemUserOptionsHtml);
@@ -54,15 +146,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Render All Todos List
   const allTodosList = document.getElementById('all-todos-list');
   if (allTodosList) {
-    allTodosList.innerHTML = renderAllTodos(allTodos, keptItems, shareLinks);
+    allTodosList.innerHTML = renderAllTodos(allTodos, keptItems, users);
   }
 
   // Render User List
   const userList = document.getElementById('user-list');
   const userCount = document.getElementById('user-count');
   if (userList && userCount) {
-    userList.innerHTML = renderUserList(shareLinks);
-    userCount.textContent = Object.keys(shareLinks).length;
+    userList.innerHTML = renderUserList(users);
+    userCount.textContent = Object.keys(users).length;
   }
 
   // Render Deleted Todos List
@@ -74,7 +166,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Render Kept Items List
   const keptItemsList = document.getElementById('kept-items-list');
   if (keptItemsList) {
-    keptItemsList.innerHTML = renderKeptItems(keptItems, shareLinks);
+    keptItemsList.innerHTML = renderKeptItems(keptItems, users);
   }
 
   // Render Deleted Items List
@@ -110,6 +202,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         const response = await fetch('/api/add_item', {
           method: 'POST',
+          headers: { 'Authorization': `Bearer ${getCookie('sessionId')}` },
           body: formData,
         });
         if (!response.ok) throw new Error('添加物品失败');
@@ -121,7 +214,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (keptItemsList.querySelector('p')) { // Empty state
             keptItemsList.innerHTML = '';
         }
-        keptItemsList.insertAdjacentHTML('afterbegin', renderKeptItems([item], initialData.shareLinks));
+        keptItemsList.insertAdjacentHTML('afterbegin', renderKeptItems([item], initialData.users));
         if (window.lucide) lucide.createIcons();
 
         // Clear the form
@@ -152,6 +245,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           try {
               const response = await fetch('/api/transfer_item', {
                   method: 'POST',
+                  headers: { 'Authorization': `Bearer ${getCookie('sessionId')}` },
                   body: formData,
               });
               if (!response.ok) {
@@ -173,12 +267,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       e.preventDefault();
       const text = addTodoForm.querySelector('input[name="text"]').value;
       const attachmentFile = addTodoForm.querySelector('input[name="attachment"]').files[0];
-      const creatorId = addTodoForm.querySelector('input[name="creatorId"]').value;
       const userIds = Array.from(addTodoForm.querySelectorAll('input[name="userIds"]:checked')).map(cb => cb.value);
 
       const formData = new FormData();
       formData.append('text', text);
-      formData.append('creatorId', creatorId);
       userIds.forEach(id => formData.append('userIds', id));
       if (attachmentFile) {
         formData.append('attachment', attachmentFile);
@@ -187,6 +279,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         const response = await fetch('/api/add_todo', {
           method: 'POST',
+          headers: { 'Authorization': `Bearer ${getCookie('sessionId')}` },
           body: formData,
         });
         if (!response.ok) throw new Error('添加事项失败');
@@ -198,7 +291,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (allTodosList.querySelector('p')) { // Empty state
             allTodosList.innerHTML = '';
         }
-        allTodosList.insertAdjacentHTML('afterbegin', renderAllTodos([todo], initialData.keptItems, initialData.shareLinks));
+        allTodosList.insertAdjacentHTML('afterbegin', renderAllTodos([todo], initialData.keptItems, initialData.users));
         if (window.lucide) lucide.createIcons();
 
         e.target.reset();
@@ -220,17 +313,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         const response = await fetch('/api/add_user', {
           method: 'POST',
+          headers: { 'Authorization': `Bearer ${getCookie('sessionId')}` },
           body: formData,
         });
         if (!response.ok) throw new Error('创建用户失败');
         const { token, username } = await response.json();
 
         // Optimistic UI update
-        initialData.shareLinks[token] = { username };
+        initialData.users[token] = { username, password: 'password', role: 'user' };
         const userList = document.getElementById('user-list');
         const userCount = document.getElementById('user-count');
-        userList.innerHTML = renderUserList(initialData.shareLinks);
-        userCount.textContent = Object.keys(initialData.shareLinks).length;
+        userList.innerHTML = renderUserList(initialData.users);
+        userCount.textContent = Object.keys(initialData.users).length;
 
         e.target.reset();
       } catch (error) {
@@ -251,19 +345,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function refreshDataAndRender() {
   try {
     // 1. Fetch latest data
-    const newData = await fetch('/api/data').then(res => res.json());
+    const newData = await fetch('/api/data', {
+      headers: { 'Authorization': `Bearer ${getCookie('sessionId')}` }
+    }).then(res => res.json());
     initialData = newData; // Update global data object
-    const { allTodos, recentDeletedTodos, keptItems, recentDeletedItems, shareLinks } = newData;
+    const { allTodos, recentDeletedTodos, keptItems, recentDeletedItems, users } = newData;
 
     // 2. Re-render dynamic parts of the page
     const allTodosList = document.getElementById('all-todos-list');
     if (allTodosList) {
-      allTodosList.innerHTML = renderAllTodos(allTodos, keptItems, shareLinks);
+      allTodosList.innerHTML = renderAllTodos(allTodos, keptItems, users);
     }
 
     const keptItemsList = document.getElementById('kept-items-list');
     if (keptItemsList) {
-      keptItemsList.innerHTML = renderKeptItems(keptItems, shareLinks);
+      keptItemsList.innerHTML = renderKeptItems(keptItems, users);
     }
 
     const deletedTodosList = document.getElementById('deleted-todos-list');
@@ -284,8 +380,8 @@ async function refreshDataAndRender() {
     const userList = document.getElementById('user-list');
     const userCount = document.getElementById('user-count');
     if (userList && userCount) {
-        userList.innerHTML = renderUserList(shareLinks);
-        userCount.textContent = Object.keys(shareLinks).length;
+        userList.innerHTML = renderUserList(users);
+        userCount.textContent = Object.keys(users).length;
     }
 
     // 3. Re-initialize icons and lightboxes
@@ -321,7 +417,7 @@ function formatDate(isoString) {
 }
 
 // Frontend rendering functions
-function renderAllTodos(allTodos, keptItems, shareLinks) {
+function renderAllTodos(allTodos, keptItems, users) {
   allTodos.sort((a, b) => {
     if (a.completed && !b.completed) return 1;
     if (!a.completed && b.completed) return -1;
@@ -545,7 +641,7 @@ function renderDeletedTodos(deletedTodos) {
   }).join('');
 }
 
-function renderKeptItems(keptItems, shareLinks) {
+function renderKeptItems(keptItems, users) {
   if (keptItems.length === 0) {
     return '<p class="text-center py-4">无任何交接物品。</p>';
   }
@@ -652,8 +748,8 @@ function renderDeletedItems(deletedItems) {
   }).join('');
 }
 
-function renderUserList(shareLinks) {
-  const linkItems = Object.entries(shareLinks).map(([token, data]) => `
+function renderUserList(users) {
+  const linkItems = Object.entries(users).map(([token, data]) => `
     <li class="flex justify-between items-center py-2 border-b">
       <div>
         <p class="font-medium text-gray-800">${getDisplayName(data.username)}</p>
@@ -683,7 +779,10 @@ async function editTodo(id, ownerId, currentText) {
       try {
         const response = await fetch('/api/update_todo_text', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${getCookie('sessionId')}`
+          },
           body: JSON.stringify({ id, ownerId, text: newText }),
         });
         if (!response.ok) throw new Error('更新待办事项失败');
@@ -735,7 +834,10 @@ async function editItem(id, currentName) {
             try {
                 const response = await fetch('/api/update_item_name', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${getCookie('sessionId')}`
+                    },
                     body: JSON.stringify({ id, name: newName }),
                 });
                 if (!response.ok) throw new Error('更新物品名称失败');
@@ -772,7 +874,10 @@ async function editItem(id, currentName) {
       try {
         const response = await fetch('/api/update_item_name', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${getCookie('sessionId')}`
+          },
           body: JSON.stringify({ id, name: newName }),
         });
         if (!response.ok) throw new Error('更新物品名称失败');
@@ -808,7 +913,10 @@ async function toggleTodo(id, completed, ownerId) {
   try {
     const response = await fetch('/api/update_todo', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getCookie('sessionId')}`
+      },
       body: JSON.stringify({ id, completed, ownerId }),
     });
     if (!response.ok) throw new Error('更新待办事项失败');
@@ -824,7 +932,10 @@ async function deleteTodo(id, ownerId) {
   try {
     const response = await fetch('/api/delete_todo', {
       method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getCookie('sessionId')}`
+      },
       body: JSON.stringify({ id, ownerId }),
     });
     if (!response.ok) throw new Error('删除事项失败');
@@ -840,7 +951,10 @@ async function deleteUser(token) {
   try {
     const response = await fetch('/api/delete_user', {
       method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getCookie('sessionId')}`
+      },
       body: JSON.stringify({ token }),
     });
     if (!response.ok) throw new Error('删除用户失败');
@@ -856,7 +970,10 @@ async function deleteItem(id) {
   try {
     const response = await fetch('/api/delete_item', {
       method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getCookie('sessionId')}`
+      },
       body: JSON.stringify({ id }),
     });
     if (!response.ok) throw new Error('删除物品失败');
@@ -872,7 +989,10 @@ async function returnItem(id) {
   try {
     const response = await fetch('/api/return_item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getCookie('sessionId')}`
+      },
       body: JSON.stringify({ id }),
     });
     if (!response.ok) throw new Error('归还物品失败');
@@ -888,7 +1008,10 @@ async function restoreTodo(id) {
   try {
     const response = await fetch('/api/restore_todo', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getCookie('sessionId')}`
+      },
       body: JSON.stringify({ id }),
     });
     if (!response.ok) throw new Error('还原失败');
@@ -905,7 +1028,10 @@ async function restoreItem(id) {
   try {
     const response = await fetch('/api/restore_item', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getCookie('sessionId')}`
+      },
       body: JSON.stringify({ id }),
     });
     if (!response.ok) throw new Error('还原物品失败');
@@ -923,7 +1049,7 @@ function showTransferModal(itemId) {
     const container = document.getElementById('transfer-keeper-checkboxes');
     container.innerHTML = ''; // Clear old checkboxes
 
-    const allUsers = Object.values(initialData.shareLinks).map(l => l.username);
+    const allUsers = Object.values(initialData.users).map(u => u.username);
     allUsers.push('public');
 
     allUsers.forEach(user => {
@@ -1044,6 +1170,7 @@ async function addProgress(event, todoId) {
   try {
     const response = await fetch('/api/add_progress', {
       method: 'POST',
+      headers: { 'Authorization': `Bearer ${getCookie('sessionId')}` },
       body: formData,
     });
     if (!response.ok) throw new Error('添加进度失败');
@@ -1076,7 +1203,10 @@ async function editProgress(id, currentText) {
       try {
         const response = await fetch('/api/update_progress', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${getCookie('sessionId')}`
+          },
           body: JSON.stringify({ id, text: newText }),
         });
         if (!response.ok) throw new Error('更新进度失败');
@@ -1117,7 +1247,10 @@ async function deleteProgress(id) {
   try {
     const response = await fetch('/api/delete_progress', {
       method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getCookie('sessionId')}`
+      },
       body: JSON.stringify({ id }),
     });
     if (!response.ok) throw new Error('删除进度失败');
@@ -1153,7 +1286,10 @@ async function restoreProgress(id) {
   try {
     const response = await fetch('/api/restore_progress', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getCookie('sessionId')}`
+      },
       body: JSON.stringify({ id }),
     });
     if (!response.ok) throw new Error('还原进度失败');

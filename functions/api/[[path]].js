@@ -1,15 +1,45 @@
 // ⚠️ 重要提示：此 Worker 需要绑定一个名为 R2_BUCKET 的 R2 存储桶。
 // 如果未绑定 R2 存储桶，Worker 将无法正常工作。
 
-const SHARE_LINKS_KEY = 'admin:share_links';
-const DELETED_TODOS_KEY = 'system:deleted_todos';
-const KEPT_ITEMS_KEY = 'system:kept_items'; // 新增物品保管的 R2 键
-const DELETED_ITEMS_KEY = 'system:deleted_items'; // 新增已删除物品的 R2 键
-const DELETED_PROGRESS_KEY = 'system:deleted_progress'; // 新增已删除进度的 R2 键
+const USERS_KEY = 'system-users.json';
+const SESSIONS_KEY_PREFIX = 'system-sessions-';
+const DELETED_TODOS_KEY = 'system-deleted_todos.json';
+const KEPT_ITEMS_KEY = 'system-kept_items.json'; // 新增物品保管的 R2 键
+const DELETED_ITEMS_KEY = 'system-deleted_items.json'; // 新增已删除物品的 R2 键
+const DELETED_PROGRESS_KEY = 'system-deleted_progress.json'; // 新增已删除进度的 R2 键
+
+// --- Session Management ---
+
+async function createSession(env, user) {
+  const sessionId = crypto.randomUUID();
+  const sessionData = {
+    user: user,
+    createdAt: new Date().toISOString()
+  };
+  await env.R2_BUCKET.put(`${SESSIONS_KEY_PREFIX}${sessionId}`, JSON.stringify(sessionData));
+  return sessionId;
+}
+
+async function getSession(env, sessionId) {
+  if (!sessionId) return null;
+  try {
+    const r2Object = await env.R2_BUCKET.get(`${SESSIONS_KEY_PREFIX}${sessionId}`);
+    if (r2Object === null) return null;
+    return await r2Object.json();
+  } catch (error) {
+    console.error(`Error loading session for key ${sessionId}:`, error);
+    return null;
+  }
+}
+
+async function deleteSession(env, sessionId) {
+  if (!sessionId) return;
+  await env.R2_BUCKET.delete(`${SESSIONS_KEY_PREFIX}${sessionId}`);
+}
 
 // --- 辅助函数 ---
 
-const getKvKey = (userId) => `todos:${userId}`;
+const getKvKey = (userId) => `todos-${userId}.json`;
 
 function getDisplayName(userId) {
   if (userId === 'admin') return 'yc';
@@ -82,21 +112,20 @@ async function loadTodos(env, key) {
   }
 }
 
+import { getSessionId } from './get-session-id.js';
+
 async function handleUpdateProgress(request, env) {
   const { id, text } = await request.json();
   if (!id || !text) {
     return new Response(JSON.stringify({ error: "Missing 'id' or 'text'" }), { status: 400 });
   }
 
-  const referer = request.headers.get('Referer');
-  let actorId = 'admin';
-  if (referer) {
-      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
-      const shareLinks = await loadShareLinks(env);
-      if (shareLinks[refererPath]) {
-          actorId = shareLinks[refererPath].username;
-      }
+  const sessionId = getSessionId(request);
+  const session = await getSession(env, sessionId);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
+  const actorId = session.user.username;
 
   const allTodos = await getAllUsersTodos(env);
   let progressFound = false;
@@ -132,15 +161,12 @@ async function handleDeleteProgress(request, env) {
     return new Response(JSON.stringify({ error: "Missing 'id'" }), { status: 400 });
   }
 
-  const referer = request.headers.get('Referer');
-  let deleterId = 'admin';
-  if (referer) {
-      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
-      const shareLinks = await loadShareLinks(env);
-      if (shareLinks[refererPath]) {
-          deleterId = shareLinks[refererPath].username;
-      }
+  const sessionId = getSessionId(request);
+  const session = await getSession(env, sessionId);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
+  const deleterId = session.user.username;
 
   const allTodos = await getAllUsersTodos(env);
   let progressFound = false;
@@ -187,15 +213,12 @@ async function handleRestoreProgress(request, env) {
     return new Response(JSON.stringify({ error: "Missing 'id'" }), { status: 400 });
   }
 
-  const referer = request.headers.get('Referer');
-  let actorId = 'admin';
-  if (referer) {
-      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
-      const shareLinks = await loadShareLinks(env);
-      if (shareLinks[refererPath]) {
-          actorId = shareLinks[refererPath].username;
-      }
+  const sessionId = getSessionId(request);
+  const session = await getSession(env, sessionId);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
+  const actorId = session.user.username;
 
   let deletedProgressList = await loadDeletedProgress(env);
   const progressIndex = deletedProgressList.findIndex(p => p.id === id);
@@ -242,15 +265,12 @@ async function handleUpdateItemName(request, env) {
     return new Response(JSON.stringify({ error: "Missing 'id' or 'name'" }), { status: 400 });
   }
 
-  const referer = request.headers.get('Referer');
-  let actorId = 'admin';
-  if (referer) {
-      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
-      const shareLinks = await loadShareLinks(env);
-      if (shareLinks[refererPath]) {
-          actorId = shareLinks[refererPath].username;
-      }
+  const sessionId = getSessionId(request);
+  const session = await getSession(env, sessionId);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
+  const actorId = session.user.username;
 
   const keptItems = await loadKeptItems(env);
   const itemIndex = keptItems.findIndex(item => item.id === id);
@@ -270,15 +290,12 @@ async function handleUpdateItemName(request, env) {
 }
 
 async function handleAddProgress(request, env) {
-  const referer = request.headers.get('Referer');
-  let creatorId = 'admin';
-  if (referer) {
-      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
-      const shareLinks = await loadShareLinks(env);
-      if (shareLinks[refererPath]) {
-          creatorId = shareLinks[refererPath].username;
-      }
+  const sessionId = getSessionId(request);
+  const session = await getSession(env, sessionId);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
+  const creatorId = session.user.username;
 
   const formData = await request.formData();
   const todoId = formData.get('todoId');
@@ -349,15 +366,12 @@ async function handleUpdateTodoText(request, env) {
     return new Response(JSON.stringify({ error: "Missing 'id', 'ownerId', or 'text'" }), { status: 400 });
   }
 
-  const referer = request.headers.get('Referer');
-  let editorId = 'admin';
-  if (referer) {
-      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
-      const shareLinks = await loadShareLinks(env);
-      if (shareLinks[refererPath]) {
-          editorId = shareLinks[refererPath].username;
-      }
+  const sessionId = getSessionId(request);
+  const session = await getSession(env, sessionId);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
+  const editorId = session.user.username;
 
   const kvKey = getKvKey(ownerId);
   const todos = await loadTodos(env, kvKey);
@@ -389,20 +403,32 @@ async function saveTodos(env, key, todos) {
   await env.R2_BUCKET.put(key, JSON.stringify(todos));
 }
 
-async function loadShareLinks(env) {
+async function loadUsers(env) {
   try {
-    const r2Object = await env.R2_BUCKET.get(SHARE_LINKS_KEY);
-    if (r2Object === null) return {};
+    const r2Object = await env.R2_BUCKET.get(USERS_KEY);
+    if (r2Object === null) {
+      console.log("No users found, creating default admin user...");
+      const defaultUsers = {
+        "admin": {
+          "username": "admin",
+          "password": "112233",
+          "role": "admin"
+        }
+      };
+      await env.R2_BUCKET.put(USERS_KEY, JSON.stringify(defaultUsers));
+      console.log("Default admin user created successfully.");
+      return defaultUsers;
+    }
     return await r2Object.json();
   } catch (error) {
-    console.error("Error loading share links:", error);
-    if (env.DEBUG) throw error; // Re-throw for debugging
+    console.error("Error loading users:", error);
+    if (env.DEBUG) throw error;
     return {};
   }
 }
 
-async function saveShareLinks(env, links) {
-  await env.R2_BUCKET.put(SHARE_LINKS_KEY, JSON.stringify(links));
+async function saveUsers(env, users) {
+  await env.R2_BUCKET.put(USERS_KEY, JSON.stringify(users));
 }
 
 async function loadDeletedTodos(env) {
@@ -470,7 +496,7 @@ async function saveDeletedProgress(env, progress) {
 }
 
 async function getAllUsersTodos(env) {
-  const listResponse = await env.R2_BUCKET.list({ prefix: 'todos:' });
+  const listResponse = await env.R2_BUCKET.list({ prefix: 'todos-' });
   const keys = listResponse.objects.map(k => k.key);
 
   if (keys.length === 0) {
@@ -483,7 +509,7 @@ async function getAllUsersTodos(env) {
   let allTodos = [];
   allUserTodosArrays.forEach((userTodos, index) => {
     const key = keys[index];
-    const ownerId = key.substring(6);
+    const ownerId = key.substring(6, key.length - 5); // "todos-" is 6 chars, ".json" is 5
     allTodos.push(...userTodos.map(todo => ({ ...todo, ownerId: ownerId })));
   });
 
@@ -493,16 +519,45 @@ async function getAllUsersTodos(env) {
 
 // --- API 逻辑处理器 ---
 
-async function handleAddTodo(request, env) {
-  const referer = request.headers.get('Referer');
-  let creatorId = 'admin';
-  if (referer) {
-      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
-      const shareLinks = await loadShareLinks(env);
-      if (shareLinks[refererPath]) {
-          creatorId = shareLinks[refererPath].username;
-      }
+async function handleLogin(request, env) {
+  const { token, username, password } = await request.json();
+
+  if (!password) {
+    return new Response(JSON.stringify({ error: "Password is required" }), { status: 400 });
   }
+
+  const users = await loadUsers(env);
+  let user;
+
+  if (token) {
+    user = users[token];
+  } else if (username) {
+    const lowerCaseUsername = username.toLowerCase();
+    const userEntry = Object.entries(users).find(([_, u]) => u.username.toLowerCase() === lowerCaseUsername);
+    if (userEntry) {
+      user = userEntry[1];
+    }
+  }
+
+  if (!user) {
+    return new Response(JSON.stringify({ error: "User not found" }), { status: 404 });
+  }
+
+  if (user.password !== password) {
+    return new Response(JSON.stringify({ error: "Invalid password" }), { status: 401 });
+  }
+
+  const sessionId = await createSession(env, user);
+  return new Response(JSON.stringify({ success: true, sessionId: sessionId }), { status: 200 });
+}
+
+async function handleAddTodo(request, env) {
+  const sessionId = getSessionId(request);
+  const session = await getSession(env, sessionId);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+  }
+  const creatorId = session.user.username;
 
   const formData = await request.formData();
   const text = formData.get('text');
@@ -566,15 +621,12 @@ async function handleUpdateTodo(request, env) {
     return new Response(JSON.stringify({ error: "Missing 'id', 'completed', or 'ownerId'" }), { status: 400 });
   }
 
-  const referer = request.headers.get('Referer');
-  let completerId = 'admin';
-  if (referer) {
-      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
-      const shareLinks = await loadShareLinks(env);
-      if (shareLinks[refererPath]) {
-          completerId = shareLinks[refererPath].username;
-      }
+  const sessionId = getSessionId(request);
+  const session = await getSession(env, sessionId);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
+  const completerId = session.user.username;
 
   const kvKey = getKvKey(ownerId);
   const todos = await loadTodos(env, kvKey);
@@ -616,15 +668,12 @@ async function handleDeleteTodo(request, env) {
     return new Response(JSON.stringify({ error: "Missing 'id' or 'ownerId'" }), { status: 400 });
   }
 
-  const referer = request.headers.get('Referer');
-  let deleterId = 'admin';
-  if (referer) {
-      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
-      const shareLinks = await loadShareLinks(env);
-      if (shareLinks[refererPath]) {
-          deleterId = shareLinks[refererPath].username;
-      }
+  const sessionId = getSessionId(request);
+  const session = await getSession(env, sessionId);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
+  const deleterId = session.user.username;
 
   const kvKey = getKvKey(ownerId);
   let todos = await loadTodos(env, kvKey);
@@ -663,34 +712,47 @@ async function handleDeleteTodo(request, env) {
 }
 
 async function handleCreateUser(request, env) {
+    const sessionId = getSessionId(request);
+    const session = await getSession(env, sessionId);
+    if (!session) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+
     const formData = await request.formData();
     const username = formData.get('username')?.toLowerCase();
     if (!username) {
         return new Response('Username is required', { status: 400 });
     }
 
-    const shareLinks = await loadShareLinks(env);
+    const users = await loadUsers(env);
     const newToken = crypto.randomUUID().substring(0, 8);
     
-    shareLinks[newToken] = {
+    users[newToken] = {
         username: username,
-        created_at: new Date().toISOString()
+        password: '112233', // Default password
+        role: 'user'
     };
     
-    await saveShareLinks(env, shareLinks);
+    await saveUsers(env, users);
     return new Response(JSON.stringify({ success: true, token: newToken, username: username }), { status: 200, headers: { 'Content-Type': 'application/json;charset=UTF-8' } });
 }
 
 async function handleDeleteUser(request, env) {
+    const sessionId = getSessionId(request);
+    const session = await getSession(env, sessionId);
+    if (!session) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+
     const { token } = await request.json();
     if (!token) {
         return new Response(JSON.stringify({ error: "Missing 'token'" }), { status: 400 });
     }
 
-    const shareLinks = await loadShareLinks(env);
-    if (shareLinks[token]) {
-        delete shareLinks[token];
-        await saveShareLinks(env, shareLinks);
+    const users = await loadUsers(env);
+    if (users[token]) {
+        delete users[token];
+        await saveUsers(env, users);
         return new Response(JSON.stringify({ success: true }), { status: 200 });
     } else {
         return new Response(JSON.stringify({ error: "User token not found" }), { status: 404 });
@@ -700,7 +762,13 @@ async function handleDeleteUser(request, env) {
 // --- 物品保管 API 逻辑处理器 ---
 
 async function handleAddItem(request, env) {
-  const referer = request.headers.get('Referer');
+  const sessionId = getSessionId(request);
+  const session = await getSession(env, sessionId);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+  }
+  const creatorId = session.user.username;
+
   const formData = await request.formData();
   const name = formData.get('name');
   const keepers = formData.getAll('keepers');
@@ -709,15 +777,6 @@ async function handleAddItem(request, env) {
 
   if (!name || keepers.length === 0) {
     return new Response('Missing "name" or "keepers" in form data', { status: 400 });
-  }
-
-  let creatorId = 'admin';
-  if (referer) {
-      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
-      const shareLinks = await loadShareLinks(env);
-      if (shareLinks[refererPath]) {
-          creatorId = shareLinks[refererPath].username;
-      }
   }
 
   let attachmentUrl = null;
@@ -766,15 +825,12 @@ async function handleDeleteItem(request, env) {
     return new Response(JSON.stringify({ error: "Missing 'id'" }), { status: 400 });
   }
 
-  const referer = request.headers.get('Referer');
-  let deleterId = 'admin';
-  if (referer) {
-      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
-      const shareLinks = await loadShareLinks(env);
-      if (shareLinks[refererPath]) {
-          deleterId = shareLinks[refererPath].username;
-      }
+  const sessionId = getSessionId(request);
+  const session = await getSession(env, sessionId);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
+  const deleterId = session.user.username;
 
   let keptItems = await loadKeptItems(env);
   const itemIndex = keptItems.findIndex(item => item.id === id);
@@ -803,22 +859,19 @@ async function handleDeleteItem(request, env) {
 }
 
 async function handleTransferItem(request, env) {
-  const referer = request.headers.get('Referer');
+  const sessionId = getSessionId(request);
+  const session = await getSession(env, sessionId);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+  }
+  const transferrerId = session.user.username;
+
   const formData = await request.formData();
   const itemId = formData.get('itemId');
   const newKeepers = formData.getAll('newKeepers');
 
   if (!itemId || newKeepers.length === 0) {
     return new Response('Missing itemId or newKeepers in form data', { status: 400 });
-  }
-
-  let transferrerId = 'admin';
-  if (referer) {
-      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
-      const shareLinks = await loadShareLinks(env);
-      if (shareLinks[refererPath]) {
-          transferrerId = shareLinks[refererPath].username;
-      }
   }
 
   const keptItems = await loadKeptItems(env);
@@ -865,20 +918,17 @@ async function handleTransferItem(request, env) {
 }
 
 async function handleReturnItem(request, env) {
-  const referer = request.headers.get('Referer');
+  const sessionId = getSessionId(request);
+  const session = await getSession(env, sessionId);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+  }
+  const returnerId = session.user.username;
+
   const { id } = await request.json();
 
   if (!id) {
     return new Response(JSON.stringify({ error: "Missing 'id'" }), { status: 400 });
-  }
-
-  let returnerId = 'admin';
-  if (referer) {
-      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
-      const shareLinks = await loadShareLinks(env);
-      if (shareLinks[refererPath]) {
-          returnerId = shareLinks[refererPath].username;
-      }
   }
 
   const keptItems = await loadKeptItems(env);
@@ -905,15 +955,12 @@ async function handleRestoreTodo(request, env) {
     return new Response(JSON.stringify({ error: "Missing 'id'" }), { status: 400 });
   }
 
-  const referer = request.headers.get('Referer');
-  let restorerId = 'admin';
-  if (referer) {
-      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
-      const shareLinks = await loadShareLinks(env);
-      if (shareLinks[refererPath]) {
-          restorerId = shareLinks[refererPath].username;
-      }
+  const sessionId = getSessionId(request);
+  const session = await getSession(env, sessionId);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
+  const restorerId = session.user.username;
 
   let deletedTodos = await loadDeletedTodos(env);
   const todoIndex = deletedTodos.findIndex(t => t.id === id);
@@ -953,15 +1000,12 @@ async function handleRestoreItem(request, env) {
     return new Response(JSON.stringify({ error: "Missing 'id'" }), { status: 400 });
   }
 
-  const referer = request.headers.get('Referer');
-  let actorId = 'admin';
-  if (referer) {
-      const refererPath = new URL(referer).pathname.substring(1).split('/')[0].toLowerCase();
-      const shareLinks = await loadShareLinks(env);
-      if (shareLinks[refererPath]) {
-          actorId = shareLinks[refererPath].username;
-      }
+  const sessionId = getSessionId(request);
+  const session = await getSession(env, sessionId);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
+  const actorId = session.user.username;
 
   let deletedItems = await loadDeletedItems(env);
   const itemIndex = deletedItems.findIndex(item => item.id === id);
@@ -988,19 +1032,25 @@ async function handleRestoreItem(request, env) {
 
 async function handleApiData(context) {
   const { request, env } = context;
+  const sessionId = getSessionId(request);
+  const session = await getSession(env, sessionId);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+  }
+
   const url = new URL(request.url);
   const isRootView = url.pathname === '/api/data';
 
   // Parallelize all data loading from R2
   const [
-    shareLinks,
+    users,
     allTodos,
     deletedTodos,
     keptItems,
     deletedItems,
     deletedProgress
   ] = await Promise.all([
-    loadShareLinks(env),
+    loadUsers(env),
     getAllUsersTodos(env),
     loadDeletedTodos(env),
     loadKeptItems(env),
@@ -1031,7 +1081,7 @@ async function handleApiData(context) {
     keptItems,
     recentDeletedItems,
     recentDeletedProgress,
-    shareLinks,
+    users,
     isRootView
   }), {
     headers: { 'Content-Type': 'application/json;charset=UTF-8' },
@@ -1070,6 +1120,8 @@ export async function onRequest(context) {
 
   // Handle API routes
   switch (path) {
+    case '/login':
+      return handleLogin(request, env);
     case '/data':
       return handleApiData(context);
     case '/add_todo':
@@ -1106,7 +1158,35 @@ export async function onRequest(context) {
       return handleDeleteProgress(request, env);
     case '/restore_progress':
       return handleRestoreProgress(request, env);
+    case '/migrate-r2-keys':
+      return handleMigrateR2Keys(request, env);
     default:
       return new Response('API Not Found', { status: 404 });
   }
+}
+
+async function handleMigrateR2Keys(request, env) {
+  const listResponse = await env.R2_BUCKET.list();
+  const objects = listResponse.objects;
+
+  for (const object of objects) {
+    const oldKey = object.key;
+    if (oldKey.includes(':') && !oldKey.endsWith('.json')) {
+      const newKey = oldKey.replace(/:/g, '-') + '.json';
+      const r2Object = await env.R2_BUCKET.get(oldKey);
+      if (r2Object) {
+        await env.R2_BUCKET.put(newKey, await r2Object.arrayBuffer());
+        await env.R2_BUCKET.delete(oldKey);
+      }
+    }
+  }
+
+  // Update admin password to plaintext
+  const users = await loadUsers(env);
+  if (users.admin) {
+    users.admin.password = '112233';
+    await saveUsers(env, users);
+  }
+
+  return new Response('R2 key migration and admin password update complete.', { status: 200 });
 }
