@@ -540,7 +540,7 @@ async function handleLogin(request, env) {
     user = users[token];
   } else if (username) {
     const lowerCaseUsername = username.toLowerCase();
-    const userEntry = Object.entries(users).find(([_, u])]) => u.username.toLowerCase() === lowerCaseUsername);
+    const userEntry = Object.entries(users).find(([_, u]) => u.username.toLowerCase() === lowerCaseUsername);
     if (userEntry) {
       user = userEntry[1];
     }
